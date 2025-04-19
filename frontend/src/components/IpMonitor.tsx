@@ -1,0 +1,488 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Box, 
+  Button, 
+  TextField, 
+  Typography, 
+  Paper, 
+  Alert,
+  Grid,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  IconButton,
+  CircularProgress,
+  Tabs,
+  Tab,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Chip,
+  Select,
+  MenuItem,
+  InputLabel,
+  FormControl
+} from '@mui/material';
+import DeleteIcon from '@mui/icons-material/Delete';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import { startMonitoring, stopMonitoring, getMonitoredIps, scanIp, getMonitoringLogs } from '../services/monitoringService';
+import { SeverityLevel } from '../types';
+
+interface TabPanelProps {
+  children?: React.ReactNode;
+  index: number;
+  value: number;
+}
+
+function TabPanel(props: TabPanelProps) {
+  const { children, value, index, ...other } = props;
+
+  return (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      id={`simple-tabpanel-${index}`}
+      aria-labelledby={`simple-tab-${index}`}
+      {...other}
+    >
+      {value === index && (
+        <Box sx={{ p: 3 }}>
+          {children}
+        </Box>
+      )}
+    </div>
+  );
+}
+
+interface Port {
+  port: number;
+  state: string;
+  service?: string;
+}
+
+interface ScanResult {
+  timestamp: Date;
+  targetIp: string;
+  ports: Port[];
+  packetLoss: number;
+  responseTime: number;
+  suspiciousActivity: boolean;
+  trafficVolume?: number;
+  connectionAttempts?: number;
+}
+
+const IpMonitor: React.FC = () => {
+  const [ipAddress, setIpAddress] = useState('');
+  const [interval, setInterval] = useState(5);
+  const [monitoredIps, setMonitoredIps] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [tabValue, setTabValue] = useState(0);
+  const [selectedIp, setSelectedIp] = useState<string>('');
+  const [monitoringLogs, setMonitoringLogs] = useState<any[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  // Validation for IP addresses
+  const isValidIp = (ip: string): boolean => {
+    const ipPattern = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+    return ipPattern.test(ip);
+  };
+
+  // Fetch currently monitored IPs on component mount
+  useEffect(() => {
+    loadMonitoredIps();
+  }, []);
+
+  // Load monitored IPs from the server
+  const loadMonitoredIps = async () => {
+    try {
+      setLoading(true);
+      const ips = await getMonitoredIps();
+      setMonitoredIps(ips);
+      setLoading(false);
+    } catch (err) {
+      setError('Failed to load monitored IPs');
+      setLoading(false);
+    }
+  };
+
+  // Start monitoring an IP address
+  const handleStartMonitoring = async () => {
+    if (!ipAddress) {
+      setError('Please enter an IP address');
+      return;
+    }
+
+    if (!isValidIp(ipAddress)) {
+      setError('Please enter a valid IP address');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      await startMonitoring(ipAddress, interval);
+      setSuccess(`Started monitoring ${ipAddress}`);
+      setIpAddress('');
+      loadMonitoredIps();
+    } catch (err) {
+      setError('Failed to start monitoring');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Stop monitoring an IP address
+  const handleStopMonitoring = async (ip: string) => {
+    try {
+      setLoading(true);
+      await stopMonitoring(ip);
+      setSuccess(`Stopped monitoring ${ip}`);
+      loadMonitoredIps();
+    } catch (err) {
+      setError(`Failed to stop monitoring ${ip}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Run a one-time scan on an IP address
+  const handleScanIp = async (ip: string) => {
+    try {
+      setScanLoading(true);
+      setScanResult(null);
+      const result = await scanIp(ip);
+      setScanResult(result);
+      setScanLoading(false);
+    } catch (err) {
+      setError(`Failed to scan ${ip}`);
+      setScanLoading(false);
+    }
+  };
+
+  // Handle tab change
+  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
+    setTabValue(newValue);
+  };
+
+  // Load monitoring logs for a specific IP
+  const handleViewLogs = async (ip: string) => {
+    setSelectedIp(ip);
+    try {
+      setLogsLoading(true);
+      const response = await getMonitoringLogs(ip);
+      setMonitoringLogs(response.logs);
+      setLogsLoading(false);
+    } catch (err) {
+      setError(`Failed to load logs for ${ip}`);
+      setLogsLoading(false);
+    }
+  };
+
+  // Get severity color for visual indication
+  const getSeverityColor = (severity: SeverityLevel) => {
+    switch (severity) {
+      case 'critical':
+        return 'error';
+      case 'high':
+        return 'error';
+      case 'medium':
+        return 'warning';
+      case 'low':
+        return 'success';
+      default:
+        return 'default';
+    }
+  };
+
+  return (
+    <Paper elevation={3} sx={{ p: 3 }}>
+      <Typography variant="h5" gutterBottom>
+        IP Address Monitoring
+      </Typography>
+
+      <Tabs value={tabValue} onChange={handleTabChange} aria-label="IP monitoring tabs">
+        <Tab label="Configure Monitoring" />
+        <Tab label="Active Monitors" />
+        <Tab label="Monitoring Logs" />
+      </Tabs>
+
+      {/* Tab 1: Configure monitoring */}
+      <TabPanel value={tabValue} index={0}>
+        <Box sx={{ mt: 3, mb: 2 }}>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
+          {success && (
+            <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>
+              {success}
+            </Alert>
+          )}
+
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                id="ipAddress"
+                label="IP Address to Monitor"
+                placeholder="192.168.1.1"
+                value={ipAddress}
+                onChange={(e) => setIpAddress(e.target.value)}
+                error={ipAddress !== '' && !isValidIp(ipAddress)}
+                helperText={ipAddress !== '' && !isValidIp(ipAddress) ? 'Please enter a valid IP address' : ''}
+              />
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <TextField
+                fullWidth
+                id="interval"
+                label="Check Interval (minutes)"
+                type="number"
+                value={interval}
+                onChange={(e) => setInterval(parseInt(e.target.value))}
+                inputProps={{ min: 1, max: 60 }}
+              />
+            </Grid>
+            <Grid item xs={12} md={3} sx={{ display: 'flex', alignItems: 'center' }}>
+              <Button
+                variant="contained"
+                color="primary"
+                disabled={loading || !ipAddress}
+                onClick={handleStartMonitoring}
+                fullWidth
+              >
+                {loading ? <CircularProgress size={24} /> : 'Start Monitoring'}
+              </Button>
+            </Grid>
+          </Grid>
+        </Box>
+
+        <Box sx={{ mt: 4 }}>
+          <Typography variant="h6" gutterBottom>
+            One-Time IP Scan
+          </Typography>
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={8}>
+              <TextField
+                fullWidth
+                id="scanIpAddress"
+                label="IP Address to Scan"
+                placeholder="192.168.1.1"
+                value={ipAddress}
+                onChange={(e) => setIpAddress(e.target.value)}
+                error={ipAddress !== '' && !isValidIp(ipAddress)}
+                helperText={ipAddress !== '' && !isValidIp(ipAddress) ? 'Please enter a valid IP address' : ''}
+              />
+            </Grid>
+            <Grid item xs={12} md={4} sx={{ display: 'flex', alignItems: 'center' }}>
+              <Button
+                variant="outlined"
+                color="primary"
+                disabled={scanLoading || !ipAddress}
+                onClick={() => handleScanIp(ipAddress)}
+                fullWidth
+              >
+                {scanLoading ? <CircularProgress size={24} /> : 'Run Scan'}
+              </Button>
+            </Grid>
+          </Grid>
+
+          {scanResult && (
+            <Paper elevation={2} sx={{ mt: 2, p: 2 }}>
+              <Typography variant="h6">
+                Scan Results for {scanResult.targetIp}
+                {scanResult.suspiciousActivity && (
+                  <Chip 
+                    label="Suspicious Activity Detected" 
+                    color="error" 
+                    size="small"
+                    sx={{ ml: 1 }}
+                  />
+                )}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Scanned at: {new Date(scanResult.timestamp).toLocaleString()}
+              </Typography>
+
+              <Grid container spacing={2} sx={{ mt: 1 }}>
+                <Grid item xs={12} md={6}>
+                  <Typography variant="subtitle2">Network Response</Typography>
+                  <Box sx={{ pl: 2 }}>
+                    <Typography>Packet Loss: {scanResult.packetLoss}%</Typography>
+                    <Typography>Response Time: {scanResult.responseTime}ms</Typography>
+                  </Box>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <Typography variant="subtitle2">Traffic Analysis</Typography>
+                  <Box sx={{ pl: 2 }}>
+                    <Typography>Traffic Volume: {scanResult.trafficVolume || 'N/A'} KB/s</Typography>
+                    <Typography>Connection Attempts: {scanResult.connectionAttempts || 'N/A'} /min</Typography>
+                  </Box>
+                </Grid>
+              </Grid>
+
+              <Typography variant="subtitle2" sx={{ mt: 2 }}>Open Ports ({scanResult.ports.length})</Typography>
+              {scanResult.ports.length > 0 ? (
+                <List dense>
+                  {scanResult.ports.map((port) => (
+                    <ListItem key={port.port}>
+                      <ListItemText 
+                        primary={`Port ${port.port} (${port.service || 'unknown'})`} 
+                        secondary={`State: ${port.state}`}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  No open ports detected
+                </Typography>
+              )}
+            </Paper>
+          )}
+        </Box>
+      </TabPanel>
+
+      {/* Tab 2: Active Monitors */}
+      <TabPanel value={tabValue} index={1}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+          <Typography variant="h6">
+            Currently Monitored IP Addresses
+          </Typography>
+          <Button 
+            startIcon={<RefreshIcon />}
+            onClick={loadMonitoredIps}
+            disabled={loading}
+          >
+            Refresh
+          </Button>
+        </Box>
+
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
+
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          monitoredIps.length > 0 ? (
+            <List>
+              {monitoredIps.map(ip => (
+                <ListItem key={ip}>
+                  <ListItemText 
+                    primary={ip} 
+                  />
+                  <ListItemSecondaryAction>
+                    <IconButton edge="end" aria-label="scan" onClick={() => handleScanIp(ip)} sx={{ mr: 1 }}>
+                      <PlayArrowIcon />
+                    </IconButton>
+                    <IconButton edge="end" aria-label="delete" onClick={() => handleStopMonitoring(ip)}>
+                      <DeleteIcon />
+                    </IconButton>
+                  </ListItemSecondaryAction>
+                </ListItem>
+              ))}
+            </List>
+          ) : (
+            <Alert severity="info">No IP addresses are currently being monitored.</Alert>
+          )
+        )}
+      </TabPanel>
+
+      {/* Tab 3: Monitoring Logs */}
+      <TabPanel value={tabValue} index={2}>
+        <Box sx={{ mb: 3 }}>
+          <FormControl fullWidth>
+            <InputLabel id="ip-select-label">Select IP Address</InputLabel>
+            <Select
+              labelId="ip-select-label"
+              value={selectedIp}
+              label="Select IP Address"
+              onChange={(e) => handleViewLogs(e.target.value)}
+            >
+              <MenuItem value="" disabled>
+                <em>Select an IP address</em>
+              </MenuItem>
+              {monitoredIps.map(ip => (
+                <MenuItem key={ip} value={ip}>{ip}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Box>
+
+        {logsLoading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
+            <CircularProgress />
+          </Box>
+        ) : selectedIp ? (
+          monitoringLogs.length > 0 ? (
+            <Box>
+              <Typography variant="h6" gutterBottom>
+                Monitoring Logs for {selectedIp}
+              </Typography>
+              
+              {monitoringLogs.map((log, index) => (
+                <Accordion key={log._id || index}>
+                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                    <Typography sx={{ flexGrow: 1 }}>
+                      {new Date(log.createdAt).toLocaleString()}
+                    </Typography>
+                    <Chip 
+                      label={log.severity} 
+                      color={getSeverityColor(log.severity)} 
+                      size="small"
+                      sx={{ mr: 1 }}
+                    />
+                    <Chip 
+                      label={log.type.replace('_', ' ')} 
+                      variant="outlined" 
+                      size="small"
+                    />
+                  </AccordionSummary>
+                  <AccordionDetails>
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} md={6}>
+                        <Typography variant="subtitle2">AI Analysis</Typography>
+                        <Typography variant="body2" paragraph>{log.aiAnalysis}</Typography>
+                      </Grid>
+                      <Grid item xs={12} md={6}>
+                        <Typography variant="subtitle2">Recommendation</Typography>
+                        <Typography variant="body2" paragraph>{log.aiRecommendation}</Typography>
+                      </Grid>
+                      <Grid item xs={12}>
+                        <Typography variant="subtitle2">Details</Typography>
+                        <Paper variant="outlined" sx={{ p: 1, mt: 1, bgcolor: '#f5f5f5' }}>
+                          <pre style={{ margin: 0, overflow: 'auto' }}>
+                            {log.requestBody}
+                          </pre>
+                        </Paper>
+                      </Grid>
+                    </Grid>
+                  </AccordionDetails>
+                </Accordion>
+              ))}
+            </Box>
+          ) : (
+            <Alert severity="info">No monitoring logs found for this IP address.</Alert>
+          )
+        ) : (
+          <Alert severity="info">Select an IP address to view its monitoring logs.</Alert>
+        )}
+      </TabPanel>
+    </Paper>
+  );
+};
+
+export default IpMonitor;
