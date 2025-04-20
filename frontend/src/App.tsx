@@ -1,8 +1,8 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import { Box, AppBar, Toolbar, Typography, Container, Button, IconButton, Drawer, Divider, List, ListItem, ListItemIcon, ListItemText } from '@mui/material';
+import { Box, AppBar, Toolbar, Typography, Container, Button, IconButton, Drawer, Divider, List, ListItem, ListItemIcon, ListItemText, CircularProgress } from '@mui/material';
 import { styled } from '@mui/material/styles';
 
 // Icons
@@ -21,6 +21,8 @@ import { ChatProvider } from './context/ChatContext';
 // Components
 import Chatbot from './components/Chatbot';
 import IpMonitor from './components/IpMonitor';
+import LoginForm from './components/LoginForm';
+import RegisterForm from './components/RegisterForm';
 
 // Create theme
 const theme = createTheme({
@@ -146,21 +148,27 @@ const ChatbotPage: React.FC = () => (
 
 // Login page placeholder
 const Login: React.FC = () => (
-  <Container maxWidth="sm">
-    <Typography variant="h4" gutterBottom>Login</Typography>
-    <Typography>Login form will appear here.</Typography>
-  </Container>
+  <LoginForm />
 );
 
 // Protected route component
 const ProtectedRoute: React.FC<{children: React.ReactNode}> = ({ children }) => {
   const { state } = useAuth();
+  const location = useLocation();
   
   if (state.isLoading) {
-    return <div>Loading...</div>;
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
+        <CircularProgress />
+      </Box>
+    );
   }
   
-  return state.isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
+  return state.isAuthenticated ? (
+    <>{children}</>
+  ) : (
+    <Navigate to="/login" state={{ from: location }} replace />
+  );
 };
 
 // Main layout with navigation
@@ -194,10 +202,15 @@ const Layout: React.FC = () => {
               Logout
             </Button>
           ) : (
-            <Button color="inherit" href="/login">
-              <LoginIcon sx={{ mr: 1 }} />
-              Login
-            </Button>
+            <>
+              <Button color="inherit" href="/login" sx={{ mr: 1 }}>
+                <LoginIcon sx={{ mr: 1 }} />
+                Login
+              </Button>
+              <Button color="inherit" href="/register" variant="outlined" sx={{ bgcolor: 'rgba(255,255,255,0.1)' }}>
+                Register
+              </Button>
+            </>
           )}
         </Toolbar>
       </AppBar>
@@ -252,6 +265,7 @@ const Layout: React.FC = () => {
             <Route path="/monitor" element={<MonitorPage />} />
             <Route path="/chatbot" element={<ChatbotPage />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<RegisterForm />} />
             <Route path="/dashboard" element={
               <ProtectedRoute>
                 <Dashboard />

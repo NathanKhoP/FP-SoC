@@ -25,12 +25,18 @@ export const register = async (req: Request, res: Response) => {
       return;
     }
 
+    // Validate role if provided
+    let userRole = UserRole.USER;
+    if (role && Object.values(UserRole).includes(role as UserRole)) {
+      userRole = role as UserRole;
+    }
+
     // Create new user
     user = new User({
       username,
       email,
       password,
-      role: role || UserRole.USER
+      role: userRole
     });
 
     // Hash password

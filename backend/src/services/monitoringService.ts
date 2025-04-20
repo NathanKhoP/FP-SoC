@@ -37,7 +37,7 @@ class MonitoringService {
   async pingHost(ip: string): Promise<{ packetLoss: number, responseTime: number }> {
     try {
       // Execute ping command (4 packets, 2 second timeout)
-      const { stdout } = await execPromise(`ping -c 4 -W 2 ${ip}`);
+      const { stdout } = await execPromise(`ping -n 4 -w 2 ${ip}`);
       
       // Extract packet loss percentage using regex
       const packetLossMatch = stdout.match(/(\d+)% packet loss/);

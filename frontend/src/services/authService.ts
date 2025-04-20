@@ -2,9 +2,9 @@ import axios from 'axios';
 
 const API_URL = 'http://localhost:5000/api/users';
 
-// Register user
-export const register = async (username: string, email: string, password: string) => {
-  const response = await axios.post(`${API_URL}/register`, { username, email, password });
+// Register user - update to include role parameter
+export const register = async (username: string, email: string, password: string, role?: string) => {
+  const response = await axios.post(`${API_URL}/register`, { username, email, password, role });
   
   if (response.data.token) {
     localStorage.setItem('token', response.data.token);
