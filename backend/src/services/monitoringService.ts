@@ -135,7 +135,8 @@ class MonitoringService {
 
   private async analyzePackets(captureFile: string): Promise<PacketData[]> {
     try {
-      const { stdout } = await execPromise(`tcpdump -r ${captureFile} -nn -tttt`);
+      const command = `tcpdump -r '${captureFile.replace(/'/g, "'\\''")}' -nn -tttt`;
+      const { stdout } = await execPromise(command);
       const packets: PacketData[] = [];
       
       stdout.split('\n').forEach(line => {

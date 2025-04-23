@@ -263,6 +263,9 @@ const IpMonitor: React.FC = () => {
               </Button>
             </Grid>
           </Grid>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+            Note: The first time an IP is monitored, an initial 5-minute baseline scan is performed. Subsequent checks occur at the specified interval.
+          </Typography>
         </Box>
 
         <Box sx={{ mt: 4 }}>
@@ -294,6 +297,9 @@ const IpMonitor: React.FC = () => {
               </Button>
             </Grid>
           </Grid>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+            Note: A standard scan takes approximately 1 minute. If this is the first scan for this IP, an initial 5-minute baseline scan will run first.
+          </Typography>
 
           {scanResult && (
             <Paper elevation={2} sx={{ mt: 2, p: 2 }}>
