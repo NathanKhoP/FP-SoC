@@ -36,6 +36,16 @@ router.get(
   getAllMaliciousRequests
 );
 
+// @route   GET /api/reports/stats
+// @desc    Get summary statistics of malicious requests
+// @access  Private (analyst and admin only)
+router.get(
+  '/stats',
+  authenticate,
+  authorize([UserRole.ANALYST, UserRole.ADMIN]), 
+  getMaliciousRequestStats
+);
+
 // @route   GET /api/reports/:id
 // @desc    Get a single malicious request report by ID
 // @access  Private (analyst and admin only)
@@ -57,16 +67,6 @@ router.patch(
     body('status').notEmpty().withMessage('Status is required')
   ],
   updateMaliciousRequestStatus
-);
-
-// @route   GET /api/reports/stats
-// @desc    Get summary statistics of malicious requests
-// @access  Private (analyst and admin only)
-router.get(
-  '/stats',
-  authenticate,
-  authorize([UserRole.ANALYST, UserRole.ADMIN]), 
-  getMaliciousRequestStats
 );
 
 export default router;

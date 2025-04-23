@@ -1,168 +1,354 @@
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import util from 'util';
 import net from 'net';
+import fs from 'fs';
+import path from 'path';
 import MaliciousRequest, { SeverityLevel, RequestType, ReportStatus } from '../models/MaliciousRequest';
 import aiService from './aiService';
 
 const execPromise = util.promisify(exec);
 
+interface PacketData {
+  timestamp: string;
+  sourceIp: string;
+  destinationIp: string;
+  protocol: string;
+  length: number;
+  info: string;
+}
+
+interface TrafficStats {
+  packetsPerSecond: number;
+  bytesPerSecond: number;
+  uniqueSources: Set<string>;
+  protocols: Map<string, number>;
+  connectionAttempts: number;
+}
+
 interface MonitoringResult {
   timestamp: Date;
   targetIp: string;
-  ports: {
-    port: number;
-    state: 'open' | 'closed' | 'filtered';
-    service?: string;
-  }[];
-  packetLoss: number;
-  responseTime: number;
+  trafficStats: TrafficStats;
   suspiciousActivity: boolean;
-  trafficVolume?: number;
-  connectionAttempts?: number;
+  anomalies: string[];
 }
 
 class MonitoringService {
   private monitoringIntervals: Map<string, NodeJS.Timeout> = new Map();
+  private tcpdumpProcesses: Map<string, any> = new Map();
+  private baselineStats: Map<string, TrafficStats> = new Map();
+  private readonly PACKETS_SAMPLE_SIZE = 1000; // Number of packets to establish baseline
+  private readonly ANOMALY_THRESHOLD = 2.0; // Standard deviations for anomaly detection
+  private readonly DEFAULT_SCAN_DURATION = 60; // seconds
+  private readonly DEFAULT_BASELINE_DURATION = 300; // seconds (5 minutes)
+  private readonly tempDir: string;
 
-  /**
-   * Validate if the provided string is a valid IP address
-   */
+  constructor() {
+    // Initialize temp directory in project root
+    this.tempDir = path.join(process.cwd(), 'temp');
+    if (!fs.existsSync(this.tempDir)) {
+      fs.mkdirSync(this.tempDir, { recursive: true });
+    }
+
+    // Handle process termination
+    process.on('SIGINT', () => this.cleanup());
+    process.on('SIGTERM', () => this.cleanup());
+  }
+
+  private cleanup(): void {
+    // Stop all monitoring
+    for (const ip of this.monitoringIntervals.keys()) {
+      this.stopMonitoring(ip);
+    }
+
+    // Clean up temp files
+    if (fs.existsSync(this.tempDir)) {
+      const files = fs.readdirSync(this.tempDir);
+      for (const file of files) {
+        try {
+          fs.unlinkSync(path.join(this.tempDir, file));
+        } catch (error) {
+          console.error(`Error cleaning up file ${file}:`, error);
+        }
+      }
+    }
+  }
+
   isValidIpAddress(ip: string): boolean {
     return net.isIP(ip) !== 0;
   }
 
-  /**
-   * Ping the target IP to check if it's online and get response metrics
-   */
-  async pingHost(ip: string): Promise<{ packetLoss: number, responseTime: number }> {
-    try {
-      // Execute ping command (4 packets, 2 second timeout)
-      const { stdout } = await execPromise(`ping -n 4 -w 2 ${ip}`);
-      
-      // Extract packet loss percentage using regex
-      const packetLossMatch = stdout.match(/(\d+)% packet loss/);
-      const packetLoss = packetLossMatch ? parseInt(packetLossMatch[1], 10) : 100;
-      
-      // Extract average response time using regex
-      const responseTimeMatch = stdout.match(/rtt min\/avg\/max\/mdev = [\d.]+\/([\d.]+)/);
-      const responseTime = responseTimeMatch ? parseFloat(responseTimeMatch[1]) : 0;
-      
-      return { packetLoss, responseTime };
-    } catch (error) {
-      console.error(`Error pinging ${ip}:`, error);
-      return { packetLoss: 100, responseTime: 0 };
-    }
-  }
-
-  /**
-   * Scan for open ports on the target IP
-   */
-  async scanPorts(ip: string, portRange: string = '20-1000'): Promise<{ port: number, state: 'open' | 'closed' | 'filtered', service?: string }[]> {
-    try {
-      // Execute nmap scan (adjust paths/options as needed)
-      const { stdout } = await execPromise(`nmap -p ${portRange} --open ${ip}`);
-      
-      const ports: { port: number, state: 'open' | 'closed' | 'filtered', service?: string }[] = [];
-      
-      // Parse the output to extract open ports
-      const portRegex = /(\d+)\/tcp\s+open\s+(\w+)?/g;
-      let match;
-      
-      while ((match = portRegex.exec(stdout)) !== null) {
-        ports.push({
-          port: parseInt(match[1], 10),
-          state: 'open',
-          service: match[2] || undefined
-        });
-      }
-      
-      return ports;
-    } catch (error) {
-      console.error(`Error scanning ports for ${ip}:`, error);
-      return [];
-    }
-  }
-
-  /**
-   * Check for unusual traffic patterns
-   */
-  async checkTraffic(ip: string): Promise<{ trafficVolume: number, connectionAttempts: number }> {
-    try {
-      // In a real-world scenario, this would use netstat, tcpdump, or other network monitoring tools
-      // For demonstration purposes, we'll generate simulated traffic
-      const trafficVolume = Math.floor(Math.random() * 1000); // KB/s
-      const connectionAttempts = Math.floor(Math.random() * 20); // connections/min
-      
-      return { trafficVolume, connectionAttempts };
-    } catch (error) {
-      console.error(`Error checking traffic for ${ip}:`, error);
-      return { trafficVolume: 0, connectionAttempts: 0 };
-    }
-  }
-
-  /**
-   * Determine if activity is suspicious based on monitoring data
-   */
-  isSuspiciousActivity(result: Partial<MonitoringResult>): boolean {
-    // In a real implementation, this would have more sophisticated logic
-    const highTraffic = (result.trafficVolume || 0) > 500; // If traffic > 500 KB/s
-    const manyConnections = (result.connectionAttempts || 0) > 10; // If > 10 connection attempts per minute
-    const manyOpenPorts = (result.ports || []).length > 5; // If more than 5 open ports
-    const commonMaliciousPorts = [21, 22, 23, 25, 53, 80, 443, 445, 3389];
-    const hasCommonPorts = (result.ports || []).some(p => commonMaliciousPorts.includes(p.port));
+  private async startPacketCapture(ip: string): Promise<string> {
+    const captureFile = path.join(this.tempDir, `capture_${ip}_${Date.now()}.pcap`);
     
-    // Simplistic detection logic for demonstration
-    return highTraffic || manyConnections || (manyOpenPorts && hasCommonPorts);
+    return new Promise((resolve, reject) => {
+      try {
+        const tcpdumpProcess = spawn('tcpdump', [
+          '-i', 'any',
+          'host', ip,
+          '-w', captureFile,
+          '-n'  // Don't convert addresses to names
+        ], {
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        // Handle process events
+        tcpdumpProcess.on('error', (error) => {
+          console.error(`tcpdump process error for ${ip}:`, error);
+          reject(error);
+        });
+
+        // Wait for tcpdump to start capturing
+        tcpdumpProcess.stderr.on('data', (data) => {
+          const output = data.toString();
+          if (output.includes('listening on')) {
+            this.tcpdumpProcesses.set(ip, tcpdumpProcess);
+            resolve(captureFile);
+          } else if (output.includes('permission denied')) {
+            reject(new Error('Permission denied. Please ensure tcpdump has proper permissions.'));
+          }
+        });
+
+        // Handle unexpected exit
+        tcpdumpProcess.on('exit', (code, signal) => {
+          if (!this.tcpdumpProcesses.has(ip)) {
+            if (code !== null && code !== 0) {
+              reject(new Error(`tcpdump process exited with code ${code}`));
+            } else if (signal) {
+              reject(new Error(`tcpdump process was killed with signal ${signal}`));
+            }
+          }
+        });
+
+        // Set a timeout in case tcpdump doesn't start properly
+        setTimeout(() => {
+          if (!this.tcpdumpProcesses.has(ip)) {
+            tcpdumpProcess.kill();
+            reject(new Error('Timeout waiting for tcpdump to start'));
+          }
+        }, 5000);
+      } catch (error) {
+        reject(error);
+      }
+    });
   }
 
-  /**
-   * Monitor an IP address and log results
-   */
-  async monitorIp(ip: string): Promise<MonitoringResult> {
-    // Validate IP address
+  private async analyzePackets(captureFile: string): Promise<PacketData[]> {
+    try {
+      const { stdout } = await execPromise(`tcpdump -r ${captureFile} -nn -tttt`);
+      const packets: PacketData[] = [];
+      
+      stdout.split('\n').forEach(line => {
+        if (line.trim()) {
+          const parsed = this.parsePacketLine(line);
+          if (parsed) packets.push(parsed);
+        }
+      });
+
+      return packets;
+    } catch (error) {
+      console.error('Error analyzing packets:', error);
+      throw error;
+    }
+  }
+
+  private parsePacketLine(line: string): PacketData | null {
+    // Example: 2023-04-22 10:15:23.123456 IP 192.168.1.1.80 > 192.168.1.2.12345: TCP flags [S.], length 0
+    const regex = /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+) IP (\d+\.\d+\.\d+\.\d+)(?:.\d+)? > (\d+\.\d+\.\d+\.\d+)(?:.\d+)?: (\w+) (.*)/;
+    const match = line.match(regex);
+    
+    if (match) {
+      return {
+        timestamp: match[1],
+        sourceIp: match[2],
+        destinationIp: match[3],
+        protocol: match[4],
+        length: parseInt(line.match(/length (\d+)/)?.[1] || '0'),
+        info: match[5]
+      };
+    }
+    return null;
+  }
+
+  private calculateTrafficStats(packets: PacketData[]): TrafficStats {
+    const stats: TrafficStats = {
+      packetsPerSecond: 0,
+      bytesPerSecond: 0,
+      uniqueSources: new Set<string>(),
+      protocols: new Map<string, number>(),
+      connectionAttempts: 0
+    };
+
+    if (packets.length < 2) return stats;
+
+    const startTime = new Date(packets[0].timestamp).getTime();
+    const endTime = new Date(packets[packets.length - 1].timestamp).getTime();
+    const duration = (endTime - startTime) / 1000; // in seconds
+
+    let totalBytes = 0;
+    packets.forEach(packet => {
+      stats.uniqueSources.add(packet.sourceIp);
+      totalBytes += packet.length;
+      
+      // Count protocol occurrences
+      const currentCount = stats.protocols.get(packet.protocol) || 0;
+      stats.protocols.set(packet.protocol, currentCount + 1);
+      
+      // Count connection attempts (TCP SYN packets)
+      if (packet.protocol === 'TCP' && packet.info.includes('flags [S]')) {
+        stats.connectionAttempts++;
+      }
+    });
+
+    stats.packetsPerSecond = packets.length / duration;
+    stats.bytesPerSecond = totalBytes / duration;
+
+    return stats;
+  }
+
+  private detectAnomalies(currentStats: TrafficStats, baselineStats: TrafficStats): string[] {
+    const anomalies: string[] = [];
+
+    // Check packets per second
+    if (currentStats.packetsPerSecond > baselineStats.packetsPerSecond * this.ANOMALY_THRESHOLD) {
+      anomalies.push(`High packet rate: ${currentStats.packetsPerSecond.toFixed(2)} pps vs baseline ${baselineStats.packetsPerSecond.toFixed(2)} pps`);
+    }
+
+    // Check bytes per second
+    if (currentStats.bytesPerSecond > baselineStats.bytesPerSecond * this.ANOMALY_THRESHOLD) {
+      anomalies.push(`High traffic volume: ${(currentStats.bytesPerSecond / 1024).toFixed(2)} KB/s vs baseline ${(baselineStats.bytesPerSecond / 1024).toFixed(2)} KB/s`);
+    }
+
+    // Check unique sources
+    if (currentStats.uniqueSources.size > baselineStats.uniqueSources.size * this.ANOMALY_THRESHOLD) {
+      anomalies.push(`Unusual number of unique sources: ${currentStats.uniqueSources.size} vs baseline ${baselineStats.uniqueSources.size}`);
+    }
+
+    // Check connection attempts
+    if (currentStats.connectionAttempts > baselineStats.connectionAttempts * this.ANOMALY_THRESHOLD) {
+      anomalies.push(`High number of connection attempts: ${currentStats.connectionAttempts} vs baseline ${baselineStats.connectionAttempts}`);
+    }
+
+    return anomalies;
+  }
+
+  private async monitorForDuration(ip: string, durationSeconds: number): Promise<void> {
+    const abortController = new AbortController();
+    const signal = abortController.signal;
+
+    try {
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          resolve(null);
+        }, durationSeconds * 1000);
+
+        signal.addEventListener('abort', () => {
+          clearTimeout(timeout);
+          resolve(null);
+        });
+      });
+    } finally {
+      if (!signal.aborted) {
+        abortController.abort();
+      }
+    }
+  }
+
+  private async establishBaseline(ip: string): Promise<void> {
+    console.log(`Establishing baseline for ${ip}...`);
+    let captureFile: string | null = null;
+    
+    try {
+      captureFile = await this.startPacketCapture(ip);
+      await this.monitorForDuration(ip, this.DEFAULT_BASELINE_DURATION);
+      
+      const tcpdumpProcess = this.tcpdumpProcesses.get(ip);
+      if (tcpdumpProcess) {
+        tcpdumpProcess.kill('SIGTERM');
+        this.tcpdumpProcesses.delete(ip);
+      }
+
+      const packets = await this.analyzePackets(captureFile);
+      const baselineStats = this.calculateTrafficStats(packets);
+      this.baselineStats.set(ip, baselineStats);
+    } finally {
+      if (captureFile && fs.existsSync(captureFile)) {
+        try {
+          fs.unlinkSync(captureFile);
+        } catch (error) {
+          console.error('Error cleaning up baseline capture file:', error);
+        }
+      }
+    }
+  }
+
+  async monitorIp(ip: string, durationSeconds: number = this.DEFAULT_SCAN_DURATION): Promise<MonitoringResult> {
     if (!this.isValidIpAddress(ip)) {
       throw new Error(`Invalid IP address: ${ip}`);
     }
-    
-    // Gather monitoring data
-    const pingResult = await this.pingHost(ip);
-    const portsResult = await this.scanPorts(ip);
-    const trafficResult = await this.checkTraffic(ip);
-    
-    // Combine results
-    const result: MonitoringResult = {
-      timestamp: new Date(),
-      targetIp: ip,
-      ports: portsResult,
-      packetLoss: pingResult.packetLoss,
-      responseTime: pingResult.responseTime,
-      ...trafficResult,
-      suspiciousActivity: false
-    };
-    
-    // Determine if activity is suspicious
-    result.suspiciousActivity = this.isSuspiciousActivity(result);
-    
-    // If suspicious, create a malicious request entry
-    if (result.suspiciousActivity) {
-      await this.logSuspiciousActivity(result);
+
+    let captureFile: string | null = null;
+    try {
+      // If no baseline exists, establish one
+      if (!this.baselineStats.has(ip)) {
+        await this.establishBaseline(ip);
+      }
+
+      captureFile = await this.startPacketCapture(ip);
+      await this.monitorForDuration(ip, durationSeconds);
+      
+      const tcpdumpProcess = this.tcpdumpProcesses.get(ip);
+      if (tcpdumpProcess) {
+        tcpdumpProcess.kill('SIGTERM');
+        this.tcpdumpProcesses.delete(ip);
+      }
+
+      const packets = await this.analyzePackets(captureFile);
+      const currentStats = this.calculateTrafficStats(packets);
+      const baselineStats = this.baselineStats.get(ip)!;
+      const anomalies = this.detectAnomalies(currentStats, baselineStats);
+
+      const result: MonitoringResult = {
+        timestamp: new Date(),
+        targetIp: ip,
+        trafficStats: currentStats,
+        suspiciousActivity: anomalies.length > 0,
+        anomalies
+      };
+
+      if (result.suspiciousActivity) {
+        await this.logSuspiciousActivity(result);
+      }
+
+      return result;
+    } catch (error) {
+      console.error(`Error monitoring IP ${ip}:`, error);
+      throw error;
+    } finally {
+      // Ensure cleanup of any remaining processes and files
+      const tcpdumpProcess = this.tcpdumpProcesses.get(ip);
+      if (tcpdumpProcess) {
+        tcpdumpProcess.kill('SIGTERM');
+        this.tcpdumpProcesses.delete(ip);
+      }
+      if (captureFile && fs.existsSync(captureFile)) {
+        try {
+          fs.unlinkSync(captureFile);
+        } catch (error) {
+          // Just log cleanup errors, don't throw
+          console.error('Error cleaning up capture file:', error);
+        }
+      }
     }
-    
-    return result;
   }
 
-  /**
-   * Log suspicious activity to the database for AI analysis
-   */
   async logSuspiciousActivity(result: MonitoringResult): Promise<void> {
     try {
-      // Prepare data for AI analysis
-      const requestMethod = 'MONITOR'; // Custom method for monitoring
+      const requestMethod = 'MONITOR';
       const requestUrl = `ip://${result.targetIp}`;
       const requestHeaders = {};
       const requestBody = JSON.stringify(result, null, 2);
       
-      // Use AI service to analyze the monitoring data
       const aiAnalysisResult = await aiService.analyzeMaliciousRequest(
         requestUrl,
         requestMethod,
@@ -171,14 +357,13 @@ class MonitoringService {
         result.targetIp
       );
       
-      // Create a new malicious request report
       const maliciousRequest = new MaliciousRequest({
         requestUrl,
         requestMethod,
         requestHeaders,
         requestBody,
         sourceIp: result.targetIp,
-        description: `Automated monitoring detected suspicious activity on IP ${result.targetIp}`,
+        description: `Automated monitoring detected suspicious activity: ${result.anomalies.join('; ')}`,
         severity: aiAnalysisResult.severity,
         type: aiAnalysisResult.type,
         aiAnalysis: aiAnalysisResult.analysis,
@@ -186,34 +371,25 @@ class MonitoringService {
         status: ReportStatus.NEW
       });
       
-      // Save to database
       await maliciousRequest.save();
-      
       console.log(`Logged suspicious activity for IP ${result.targetIp}`);
     } catch (error) {
       console.error('Error logging suspicious activity:', error);
     }
   }
 
-  /**
-   * Start continuous monitoring of an IP address
-   */
   startContinuousMonitoring(ip: string, intervalMinutes: number = 5): void {
-    // Validate IP
     if (!this.isValidIpAddress(ip)) {
       throw new Error(`Invalid IP address: ${ip}`);
     }
     
-    // Stop any existing monitoring
     this.stopMonitoring(ip);
     
-    // Convert minutes to milliseconds
     const interval = intervalMinutes * 60 * 1000;
     
-    // Run an initial scan immediately
+    // Run initial monitoring
     this.monitorIp(ip).catch(err => console.error(`Error monitoring IP ${ip}:`, err));
     
-    // Set up interval for continuous scanning
     const intervalId = setInterval(async () => {
       try {
         await this.monitorIp(ip);
@@ -222,27 +398,26 @@ class MonitoringService {
       }
     }, interval);
     
-    // Store the interval ID for later cleanup
     this.monitoringIntervals.set(ip, intervalId);
-    
     console.log(`Started continuous monitoring of IP ${ip} every ${intervalMinutes} minutes`);
   }
 
-  /**
-   * Stop monitoring an IP address
-   */
   stopMonitoring(ip: string): void {
     const intervalId = this.monitoringIntervals.get(ip);
     if (intervalId) {
       clearInterval(intervalId);
       this.monitoringIntervals.delete(ip);
-      console.log(`Stopped monitoring IP ${ip}`);
     }
+
+    const tcpdumpProcess = this.tcpdumpProcesses.get(ip);
+    if (tcpdumpProcess) {
+      tcpdumpProcess.kill();
+      this.tcpdumpProcesses.delete(ip);
+    }
+
+    console.log(`Stopped monitoring IP ${ip}`);
   }
 
-  /**
-   * Get all currently monitored IPs
-   */
   getMonitoredIps(): string[] {
     return Array.from(this.monitoringIntervals.keys());
   }

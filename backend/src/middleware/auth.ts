@@ -18,13 +18,21 @@ declare global {
 const JWT_SECRET = process.env.JWT_SECRET || 'your-default-jwt-secret';
 
 export const authenticate = (req: Request, res: Response, next: NextFunction) => {
-  // Get token from header
-  const token = req.header('x-auth-token');
+  // Get token from Authorization header or x-auth-token
+  let token = req.header('x-auth-token');
+  
+  // Check Authorization header if x-auth-token is not present
+  if (!token) {
+    const authHeader = req.header('Authorization');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.split(' ')[1];
+    }
+  }
 
   // Check if no token
   if (!token) {
     res.status(401).json({ message: 'No token, authorization denied' });
-    return; // Return without calling next()
+    return;
   }
 
   // Verify token
@@ -34,7 +42,6 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
     next();
   } catch (err) {
     res.status(401).json({ message: 'Token is not valid' });
-    // Don't call next() on error
   }
 };
 
