@@ -2,7 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import { Box, AppBar, Toolbar, Typography, Container, Button, IconButton, Drawer, Divider, List, ListItem, ListItemIcon, ListItemText, CircularProgress } from '@mui/material';
+import { Box, Grid, AppBar, Toolbar, Typography, Container, Button, IconButton, Drawer, Divider, List, ListItem, ListItemIcon, ListItemText, CircularProgress } from '@mui/material';
 import { styled } from '@mui/material/styles';
 
 // Icons
@@ -23,22 +23,30 @@ import Chatbot from './components/Chatbot';
 import IpMonitor from './components/IpMonitor';
 import LoginForm from './components/LoginForm';
 import RegisterForm from './components/RegisterForm';
+import mascotGif from './assets/mascot.gif';
+import boxBg from './assets/Box.png';
 
 // Create theme
 const theme = createTheme({
   palette: {
     primary: {
-      main: '#1976d2',
+      main: '#f0e7b4',
     },
     secondary: {
-      main: '#dc004e',
+      main: '#f0e7b4',
+    },
+    text: {
+      primary: '#f0e7b4',
+      secondary: '#f0e7b4',
     },
     background: {
-      default: '#f5f5f5',
+      default: '#2B2C2C',
+      paper: '#2B2C2C',
     },
+    mode: 'dark',
   },
   typography: {
-    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+    fontFamily: '"Pixelify Sans", "Roboto", "Helvetica", "Arial", sans-serif',
   },
 });
 
@@ -66,51 +74,80 @@ const Main = styled('main', { shouldForwardProp: (prop) => prop !== 'open' })<{
 // Home/landing page component
 const Home: React.FC = () => {
   return (
-    <Container maxWidth="lg">
-      <Box sx={{ my: 4 }}>
-        <Typography variant="h3" component="h1" gutterBottom>
-          IP Monitoring System
-        </Typography>
-        <Typography variant="h5" color="text.secondary" paragraph>
-          With AI-powered cybersecurity assistant
-        </Typography>
-        <Typography paragraph>
-          This system enables security teams to monitor IP addresses for suspicious activity.
-          Our AI-powered assistant helps analyze threats and provides recommendations for mitigation.
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
-          <Button variant="contained" size="large" component="a" href="/monitor">
-            Monitor IP Addresses
-          </Button>
-          <Button variant="outlined" size="large" component="a" href="/chatbot">
-            Ask Security Assistant
-          </Button>
-        </Box>
-      </Box>
-      
-      {/* Feature highlights */}
-      <Box sx={{ mt: 6 }}>
-        <Typography variant="h4" gutterBottom>
-          Key Features
-        </Typography>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3, mt: 3 }}>
-          <Box sx={{ flex: '1 1 300px', p: 3, border: '1px solid #ddd', borderRadius: 2 }}>
-            <Typography variant="h6">Automated IP Monitoring</Typography>
-            <Typography>
-              Continuous monitoring of IP addresses with port scanning, traffic analysis, and suspicious activity detection.
+    <Container maxWidth={false}>
+      <Box sx={{ 
+        backgroundImage: `url(${boxBg})`,
+        backgroundSize: '100% 100%',
+        backgroundRepeat: 'no-repeat',
+        padding: '32px',
+        margin: '0 40px',
+        minHeight: '800px',  // Adjust based on your Box.png dimensions
+      }}>
+        <Grid container spacing={4} alignItems="center" >
+          <Grid item xs={12} md={5.5} sx={{ml: '100px'}}>
+            <Typography variant="h2" component="h1" gutterBottom>
+              IP Monitoring System
             </Typography>
-          </Box>
-          <Box sx={{ flex: '1 1 300px', p: 3, border: '1px solid #ddd', borderRadius: 2 }}>
-            <Typography variant="h6">AI-Powered Analysis</Typography>
-            <Typography>
-              Advanced Groq LLM integration automatically analyzes detected threats and provides actionable insights.
+            <Typography variant="h5" color="text.secondary" paragraph>
+              With AI-powered cybersecurity assistant
             </Typography>
-          </Box>
-          <Box sx={{ flex: '1 1 300px', p: 3, border: '1px solid #ddd', borderRadius: 2 }}>
-            <Typography variant="h6">Security Expert Chatbot</Typography>
-            <Typography>
-              Get immediate assistance from our AI security assistant with access to monitoring logs.
+            <Typography paragraph fontSize={24}>
+              This system enables security teams to monitor IP addresses for suspicious activity.
+              Our AI-powered assistant helps analyze threats and provides recommendations for mitigation.
             </Typography>
+            <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
+              <Button variant="contained" size="large" component="a" href="/monitor">
+                Monitor IP Addresses
+              </Button>
+              <Button variant="outlined" size="large" component="a" href="/chatbot">
+                Ask Security Assistant
+              </Button>
+            </Box>
+          </Grid>
+          <Grid item xs={8} md={5}>
+            <Box
+              sx={{
+                position: 'relative',
+                ml: '230px',
+              }}
+            >
+              <Box
+                className="mascot-background"
+              />
+              <Box 
+                component="img"
+                src={mascotGif}
+                alt="Security Mascot"
+                className="mascot-image"
+              />
+            </Box>
+          </Grid>
+        </Grid>
+
+        {/* Feature highlights */}
+        <Box sx={{ mx: 12 }}>
+          <Typography variant="h3" gutterBottom>
+            Key Features
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3}}>
+            <Box sx={{ flex: '1 1 300px', p: 3, border: '1px solid #ddd', borderRadius: 2 }}>
+              <Typography variant="h6">Automated IP Monitoring</Typography>
+              <Typography>
+                Continuous monitoring of IP addresses with port scanning, traffic analysis, and suspicious activity detection.
+              </Typography>
+            </Box>
+            <Box sx={{ flex: '1 1 300px', p: 3, border: '1px solid #ddd', borderRadius: 2 }}>
+              <Typography variant="h6">AI-Powered Analysis</Typography>
+              <Typography>
+                Advanced Groq LLM integration automatically analyzes detected threats and provides actionable insights.
+              </Typography>
+            </Box>
+            <Box sx={{ flex: '1 1 300px', p: 3, border: '1px solid #ddd', borderRadius: 2 }}>
+              <Typography variant="h6">Security Expert Chatbot</Typography>
+              <Typography>
+                Get immediate assistance from our AI security assistant with access to monitoring logs.
+              </Typography>
+            </Box>
           </Box>
         </Box>
       </Box>
