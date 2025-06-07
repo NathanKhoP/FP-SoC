@@ -29,6 +29,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { startMonitoring, stopMonitoring, getMonitoredIps, scanIp, getMonitoringLogs } from '../services/monitoringService';
+import MonitoringChatIntegration from './MonitoringChatIntegration';
 import { SeverityLevel } from '../types';
 
 interface TabPanelProps {
@@ -203,6 +204,14 @@ const IpMonitor: React.FC = () => {
       <Typography variant="h5" gutterBottom>
         IP Address Monitoring
       </Typography>
+
+      {/* AI Assistant Integration */}
+      <MonitoringChatIntegration
+        monitoredIps={monitoredIps}
+        selectedIp={selectedIp}
+        scanResult={scanResult}
+        hasRecentLogs={monitoringLogs.length > 0}
+      />
 
       <Tabs value={tabValue} onChange={handleTabChange} aria-label="IP monitoring tabs">
         <Tab label="Configure Monitoring" />

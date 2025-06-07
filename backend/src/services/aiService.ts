@@ -214,20 +214,98 @@ Based on this HTTP request data, provide a security analysis in the required JSO
    */
   async prepareMonitoringDataForChatbot(monitoringLogs: any[]): Promise<string> {
     // Extract key information from monitoring logs to provide context to the chatbot
-    const summary = monitoringLogs.slice(0, 5).map(log => {
-      return `
-IP: ${log.sourceIp}
-Timestamp: ${new Date(log.createdAt).toLocaleString()}
-Severity: ${log.severity}
-Type: ${log.type}
-Analysis: ${log.aiAnalysis}
-`;
+    const summary = monitoringLogs.slice(0, 10).map(log => {
+      let logSummary = `IP: ${log.sourceIp}\n`;
+      logSummary += `Timestamp: ${new Date(log.createdAt).toLocaleString()}\n`;
+      logSummary += `Severity: ${log.severity} | Type: ${log.type}\n`;
+      
+      if (log.aiAnalysis) {
+        logSummary += `Analysis: ${log.aiAnalysis}\n`;
+      }
+      
+      if (log.aiRecommendation) {
+        logSummary += `Recommendations: ${log.aiRecommendation}\n`;
+      }
+      
+      // Parse monitoring data from requestBody if available
+      if (log.requestBody) {
+        try {
+          const monitoringData = JSON.parse(log.requestBody);
+          if (monitoringData.trafficStats) {
+            logSummary += `Traffic: ${monitoringData.trafficStats.packetsPerSecond?.toFixed(2)} pps, `;
+            logSummary += `${(monitoringData.trafficStats.bytesPerSecond / 1024)?.toFixed(2)} KB/s\n`;
+            logSummary += `Sources: ${monitoringData.trafficStats.uniqueSources?.length || 0}, `;
+            logSummary += `Connections: ${monitoringData.trafficStats.connectionAttempts || 0}\n`;
+          }
+          
+          if (monitoringData.anomalies && monitoringData.anomalies.length > 0) {
+            logSummary += `Anomalies: ${monitoringData.anomalies.join('; ')}\n`;
+          }
+        } catch (e) {
+          // If parsing fails, just include raw data summary
+          logSummary += `Raw monitoring data available (${log.requestBody.length} chars)\n`;
+        }
+      }
+      
+      return logSummary;
     }).join('\n---\n');
     
-    return `
-RECENT MONITORING ALERTS (Last 5):
-${summary}
-`;
+    return `MONITORING DATA ANALYSIS:\n${summary}\n`;
+  }
+
+  /**
+   * Prepare comprehensive attack context for chatbot
+   */
+  async prepareAttackContextForChatbot(attack: any, relatedAttacks: any[] = [], monitoringData: any[] = []): Promise<string> {
+    let context = `ATTACK ANALYSIS CONTEXT:\n\n`;
+    
+    // Main attack details
+    context += `PRIMARY ATTACK:\n`;
+    context += `ID: ${attack._id}\n`;
+    context += `Source IP: ${attack.sourceIp}\n`;
+    context += `Target: ${attack.requestUrl}\n`;
+    context += `Method: ${attack.requestMethod}\n`;
+    context += `Attack Type: ${attack.type}\n`;
+    context += `Severity: ${attack.severity}\n`;
+    context += `Status: ${attack.status}\n`;
+    context += `Timestamp: ${new Date(attack.createdAt).toLocaleString()}\n`;
+    
+    if (attack.requestHeaders && Object.keys(attack.requestHeaders).length > 0) {
+      context += `Headers: ${JSON.stringify(attack.requestHeaders, null, 2)}\n`;
+    }
+    
+    if (attack.requestBody) {
+      context += `Payload: ${attack.requestBody.substring(0, 500)}${attack.requestBody.length > 500 ? '...' : ''}\n`;
+    }
+    
+    if (attack.aiAnalysis) {
+      context += `AI Analysis: ${attack.aiAnalysis}\n`;
+    }
+    
+    if (attack.aiRecommendation) {
+      context += `AI Recommendations: ${attack.aiRecommendation}\n`;
+    }
+    
+    // Related attacks from same source
+    if (relatedAttacks.length > 0) {
+      context += `\nRELATED ATTACKS FROM ${attack.sourceIp}:\n`;
+      relatedAttacks.slice(0, 5).forEach((related, index) => {
+        context += `${index + 1}. ${related.type} | ${related.severity} | ${new Date(related.createdAt).toLocaleString()}\n`;
+        context += `   URL: ${related.requestUrl}\n`;
+        if (related.aiAnalysis) {
+          context += `   Analysis: ${related.aiAnalysis.substring(0, 200)}...\n`;
+        }
+      });
+    }
+    
+    // Monitoring data for the IP
+    if (monitoringData.length > 0) {
+      context += `\nMONITORING DATA FOR ${attack.sourceIp}:\n`;
+      const monitoringContext = await this.prepareMonitoringDataForChatbot(monitoringData);
+      context += monitoringContext;
+    }
+    
+    return context;
   }
 }
 

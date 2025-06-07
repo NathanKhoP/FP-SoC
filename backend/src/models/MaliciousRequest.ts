@@ -47,6 +47,7 @@ export interface IMaliciousRequest extends Document {
   resolvedBy?: string;
   resolvedAt?: Date;
   notes?: string[];
+  createdAt?: Date;
 }
 
 // Schema for malicious request

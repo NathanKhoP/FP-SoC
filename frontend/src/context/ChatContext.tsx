@@ -67,7 +67,11 @@ const chatReducer = (state: ChatState, action: ChatAction): ChatState => {
 // Create the chat context
 interface ChatContextProps {
   state: ChatState;
-  sendMessage: (message: string) => Promise<void>;
+  sendMessage: (message: string, options?: {
+    ipContext?: string;
+    attackId?: string;
+    includeSystemLogs?: boolean;
+  }) => Promise<void>;
   clearChat: () => void;
 }
 
@@ -78,7 +82,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [state, dispatch] = useReducer(chatReducer, initialState);
 
   // Send message to chatbot and get response
-  const sendMessage = async (message: string) => {
+  const sendMessage = async (message: string, options?: {
+    ipContext?: string;
+    attackId?: string;
+    includeSystemLogs?: boolean;
+  }) => {
     try {
       // Update state with user message
       dispatch({ type: 'SEND_MESSAGE', payload: { message } });
@@ -98,8 +106,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         content: message,
       });
 
-      // Send message to API
-      const response = await chatbotService.sendMessage(messageHistory);
+      // Send message to API with enhanced context
+      const response = await chatbotService.sendMessage({
+        messages: messageHistory,
+        ipContext: options?.ipContext,
+        attackId: options?.attackId,
+        includeSystemLogs: options?.includeSystemLogs
+      });
 
       // Update state with assistant response
       dispatch({ type: 'RECEIVE_MESSAGE', payload: { message: response } });

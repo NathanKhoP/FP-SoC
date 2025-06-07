@@ -23,6 +23,7 @@ import Chatbot from './components/Chatbot';
 import IpMonitor from './components/IpMonitor';
 import LoginForm from './components/LoginForm';
 import RegisterForm from './components/RegisterForm';
+import Dashboard from './components/Dashboard';
 import mascotGif from './assets/mascot.gif';
 import boxBg from './assets/Box.png';
 
@@ -155,11 +156,10 @@ const Home: React.FC = () => {
   );
 };
 
-// Dashboard page placeholder
-const Dashboard: React.FC = () => (
-  <Container maxWidth="lg">
-    <Typography variant="h4" gutterBottom>Dashboard</Typography>
-    <Typography>Security incidents overview and analytics will appear here.</Typography>
+// Dashboard page
+const DashboardPage: React.FC = () => (
+  <Container maxWidth="xl">
+    <Dashboard />
   </Container>
 );
 
@@ -305,7 +305,7 @@ const Layout: React.FC = () => {
             <Route path="/register" element={<RegisterForm />} />
             <Route path="/dashboard" element={
               <ProtectedRoute>
-                <Dashboard />
+                <DashboardPage />
               </ProtectedRoute>
             } />
             <Route path="*" element={<Navigate to="/" replace />} />
