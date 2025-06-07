@@ -114,10 +114,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (err) {
         dispatch({ type: 'AUTH_ERROR' });
       }
-    } catch (err) {
+    } catch (err: any) {
       let errorMessage = 'Login failed';
 
-      if (err instanceof Error) {
+      if (err.response?.data) {
+        // Handle validation errors array
+        if (err.response.data.errors && Array.isArray(err.response.data.errors)) {
+          errorMessage = err.response.data.errors.map((error: any) => error.msg).join(', ');
+        } 
+        // Handle single error message
+        else if (err.response.data.message) {
+          errorMessage = err.response.data.message;
+        }
+      } else if (err instanceof Error) {
         errorMessage = err.message;
       }
 
@@ -138,10 +147,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (err) {
         dispatch({ type: 'AUTH_ERROR' });
       }
-    } catch (err) {
+    } catch (err: any) {
       let errorMessage = 'Registration failed';
 
-      if (err instanceof Error) {
+      if (err.response?.data) {
+        // Handle validation errors array
+        if (err.response.data.errors && Array.isArray(err.response.data.errors)) {
+          errorMessage = err.response.data.errors.map((error: any) => error.msg).join(', ');
+        } 
+        // Handle single error message
+        else if (err.response.data.message) {
+          errorMessage = err.response.data.message;
+        }
+      } else if (err instanceof Error) {
         errorMessage = err.message;
       }
 

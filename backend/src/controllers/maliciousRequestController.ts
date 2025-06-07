@@ -41,7 +41,9 @@ export const reportMaliciousRequest = async (req: Request, res: Response) => {
       severity: aiAnalysisResult.severity,
       type: aiAnalysisResult.type,
       aiAnalysis: aiAnalysisResult.analysis,
-      aiRecommendation: aiAnalysisResult.recommendation,
+      aiRecommendation: Array.isArray(aiAnalysisResult.recommendation)
+        ? aiAnalysisResult.recommendation.join("\n")
+        : String(aiAnalysisResult.recommendation),
       status: ReportStatus.NEW
     });
 

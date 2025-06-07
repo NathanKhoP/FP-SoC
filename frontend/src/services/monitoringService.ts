@@ -4,16 +4,15 @@ import { setAuthToken } from './authService';
 interface MonitoringResult {
   timestamp: Date;
   targetIp: string;
-  ports: {
-    port: number;
-    state: 'open' | 'closed' | 'filtered';
-    service?: string;
-  }[];
-  packetLoss: number;
-  responseTime: number;
+  trafficStats: {
+    packetsPerSecond: number;
+    bytesPerSecond: number;
+    uniqueSources: string[]; // Array from backend
+    protocols: Record<string, number>; // Object from backend
+    connectionAttempts: number;
+  };
   suspiciousActivity: boolean;
-  trafficVolume?: number;
-  connectionAttempts?: number;
+  anomalies: string[];
 }
 
 interface MonitoringLogsResponse {

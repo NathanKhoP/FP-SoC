@@ -21,7 +21,7 @@ const RegisterForm: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [role, setRole] = useState('user');
+  const [role, setRole] = useState("user");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -45,7 +45,20 @@ const RegisterForm: React.FC = () => {
         navigate('/login');
       }, 2000);
     } catch (error: any) {
-      setError(error.response?.data?.message || 'Registration failed');
+      let errorMessage = 'Registration failed';
+      
+      if (error.response?.data) {
+        // Handle validation errors array
+        if (error.response.data.errors && Array.isArray(error.response.data.errors)) {
+          errorMessage = error.response.data.errors.map((err: any) => err.msg).join(', ');
+        } 
+        // Handle single error message
+        else if (error.response.data.message) {
+          errorMessage = error.response.data.message;
+        }
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

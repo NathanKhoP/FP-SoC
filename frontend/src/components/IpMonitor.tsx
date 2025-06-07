@@ -57,21 +57,18 @@ function TabPanel(props: TabPanelProps) {
   );
 }
 
-interface Port {
-  port: number;
-  state: string;
-  service?: string;
-}
-
 interface ScanResult {
   timestamp: Date;
   targetIp: string;
-  ports: Port[];
-  packetLoss: number;
-  responseTime: number;
+  trafficStats: {
+    packetsPerSecond: number;
+    bytesPerSecond: number;
+    uniqueSources: string[]; // Array from backend
+    protocols: Record<string, number>; // Object from backend
+    connectionAttempts: number;
+  };
   suspiciousActivity: boolean;
-  trafficVolume?: number;
-  connectionAttempts?: number;
+  anomalies: string[];
 }
 
 const IpMonitor: React.FC = () => {
@@ -320,37 +317,64 @@ const IpMonitor: React.FC = () => {
 
               <Grid container spacing={2} sx={{ mt: 1 }}>
                 <Grid item xs={12} md={6}>
-                  <Typography variant="subtitle2">Network Response</Typography>
+                  <Typography variant="subtitle2">Traffic Statistics</Typography>
                   <Box sx={{ pl: 2 }}>
-                    <Typography>Packet Loss: {scanResult.packetLoss}%</Typography>
-                    <Typography>Response Time: {scanResult.responseTime}ms</Typography>
+                    <Typography>Packets/Second: {scanResult.trafficStats.packetsPerSecond.toFixed(2)}</Typography>
+                    <Typography>Data Rate: {(scanResult.trafficStats.bytesPerSecond / 1024).toFixed(2)} KB/s</Typography>
                   </Box>
                 </Grid>
                 <Grid item xs={12} md={6}>
-                  <Typography variant="subtitle2">Traffic Analysis</Typography>
+                  <Typography variant="subtitle2">Network Activity</Typography>
                   <Box sx={{ pl: 2 }}>
-                    <Typography>Traffic Volume: {scanResult.trafficVolume || 'N/A'} KB/s</Typography>
-                    <Typography>Connection Attempts: {scanResult.connectionAttempts || 'N/A'} /min</Typography>
+                    <Typography>Unique Sources: {scanResult.trafficStats.uniqueSources.length}</Typography>
+                    <Typography>Connection Attempts: {scanResult.trafficStats.connectionAttempts}</Typography>
                   </Box>
                 </Grid>
               </Grid>
 
-              <Typography variant="subtitle2" sx={{ mt: 2 }}>Open Ports ({scanResult.ports.length})</Typography>
-              {scanResult.ports.length > 0 ? (
-                <List dense>
-                  {scanResult.ports.map((port) => (
-                    <ListItem key={port.port}>
-                      <ListItemText 
-                        primary={`Port ${port.port} (${port.service || 'unknown'})`} 
-                        secondary={`State: ${port.state}`}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              ) : (
-                <Typography variant="body2" color="text.secondary">
-                  No open ports detected
-                </Typography>
+              {scanResult.anomalies.length > 0 && (
+                <>
+                  <Typography variant="subtitle2" sx={{ mt: 2 }}>Detected Anomalies ({scanResult.anomalies.length})</Typography>
+                  <List dense>
+                    {scanResult.anomalies.map((anomaly, index) => (
+                      <ListItem key={index}>
+                        <ListItemText 
+                          primary={anomaly}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                </>
+              )}
+
+              {scanResult.trafficStats.packetsPerSecond === 0 && (
+                <Alert severity="info" sx={{ mt: 2 }}>
+                  <Typography variant="subtitle2">No Network Traffic Detected</Typography>
+                  <Typography variant="body2">
+                    This could mean:
+                  </Typography>
+                  <ul style={{ marginTop: '8px', marginBottom: '8px' }}>
+                    <li>The IP address is not generating traffic while being monitored</li>
+                    <li>The IP is on a different network segment not visible to this monitoring system</li>
+                    <li>The IP address is not reachable from this monitoring location</li>
+                  </ul>
+                  <Typography variant="body2">
+                    <strong>Tip:</strong> Try monitoring a public IP (like 8.8.8.8) or an IP that you can actively generate traffic to while monitoring.
+                  </Typography>
+                </Alert>
+              )}
+
+              {Object.keys(scanResult.trafficStats.protocols).length > 0 && (
+                <>
+                  <Typography variant="subtitle2" sx={{ mt: 2 }}>Protocol Distribution</Typography>
+                  <Box sx={{ pl: 2 }}>
+                    {Object.entries(scanResult.trafficStats.protocols).map(([protocol, count]) => (
+                      <Typography key={protocol} variant="body2">
+                        {protocol}: {count} packets
+                      </Typography>
+                    ))}
+                  </Box>
+                </>
               )}
             </Paper>
           )}

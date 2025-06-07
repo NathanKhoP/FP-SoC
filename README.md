@@ -45,7 +45,12 @@ An advanced security system that automates the reporting, analysis, and response
    cp .env.example .env
    ```
 
-4. Start the development server:
+4. Run `setup-tcpdump.sh` and run this:
+   ```
+   setcap cap_net_raw,cap_net_admin=eip /usr/bin/tcpdump
+   ```
+
+5. Start the development server:
    ```
    pnpm dev
    ```
@@ -102,6 +107,3 @@ An advanced security system that automates the reporting, analysis, and response
 
 ### Chatbot
 - `POST /api/chatbot/message` - Send a message to the chatbot
-
-## License
-ISC
