@@ -89,10 +89,10 @@ class MonitoringService {
     
     return new Promise((resolve, reject) => {
       try {
-        // Use a broader filter to catch more traffic, and try eth0 first, then any
+        // Try 'any' interface first for better compatibility
         const tcpdumpProcess = spawn('tcpdump', [
-          '-i', 'eth0',  // Try eth0 first instead of 'any'
-          'host', ip, 'or', 'src', ip, 'or', 'dst', ip,  // Broader filter
+          '-i', 'any',  // Use 'any' interface directly
+          'host', ip, 'or', 'src', ip, 'or', 'dst', ip,
           '-w', captureFile,
           '-n',  // Don't convert addresses to names
           '-v',  // Verbose mode for better debugging
@@ -104,9 +104,7 @@ class MonitoringService {
         // Handle process events
         tcpdumpProcess.on('error', (error) => {
           console.error(`tcpdump process error for ${ip}:`, error);
-          // Try with 'any' interface if eth0 fails
-          this.startPacketCaptureWithAnyInterface(ip, captureFile).then(resolve).catch(reject);
-          return;
+          reject(error);
         });
 
         // Wait for tcpdump to start capturing
@@ -119,11 +117,6 @@ class MonitoringService {
             resolve(captureFile);
           } else if (output.includes('permission denied') || output.includes('Operation not permitted')) {
             reject(new Error('Permission denied. Please run the setup-tcpdump.sh script with sudo to configure tcpdump permissions.'));
-          } else if (output.includes('No such device exists')) {
-            // If eth0 doesn't exist, try with 'any'
-            tcpdumpProcess.kill();
-            this.startPacketCaptureWithAnyInterface(ip, captureFile).then(resolve).catch(reject);
-            return;
           }
         });
 
@@ -236,10 +229,61 @@ class MonitoringService {
 
       console.log(`Analyzing capture file: ${captureFile} (${stats.size} bytes)`);
       
-      const command = `tcpdump -r '${captureFile.replace(/'/g, "'\\''")}' -nn -tttt`;
-      const { stdout } = await execPromise(command);
-      const packets: PacketData[] = [];
+      // If file is too large, limit the number of packets to analyze
+      const maxPackets = 10000; // Limit to prevent memory issues
+      const command = `tcpdump -r '${captureFile.replace(/'/g, "'\\''")}' -nn -tttt -c ${maxPackets}`;
       
+      // Increase maxBuffer size to handle large outputs
+      const { stdout } = await execPromise(command, { 
+        maxBuffer: 50 * 1024 * 1024 // 50MB buffer
+      });
+      
+      const packets: PacketData[] = [];
+      const lines = stdout.split('\n');
+      
+      console.log(`Processing ${lines.length} lines from tcpdump output`);
+      
+      let processedCount = 0;
+      for (const line of lines) {
+        if (line.trim()) {
+          const parsed = this.parsePacketLine(line);
+          if (parsed) {
+            packets.push(parsed);
+            processedCount++;
+            
+            // Progress logging for large captures
+            if (processedCount % 1000 === 0) {
+              console.log(`Processed ${processedCount} packets...`);
+            }
+          }
+        }
+      }
+
+      console.log(`Analyzed ${packets.length} packets from capture file (${processedCount} total processed)`);
+      return packets;
+    } catch (error) {
+      console.error('Error analyzing packets:', error);
+      
+      // If it's a buffer overflow error, try with fewer packets
+      if (error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+        console.log('Buffer overflow detected, trying with limited packet count...');
+        return this.analyzePacketsLimited(captureFile, 1000);
+      }
+      
+      return [];
+    }
+  }
+
+  private async analyzePacketsLimited(captureFile: string, maxPackets: number): Promise<PacketData[]> {
+    try {
+      console.log(`Analyzing first ${maxPackets} packets from large capture file`);
+      
+      const command = `tcpdump -r '${captureFile.replace(/'/g, "'\\''")}' -nn -tttt -c ${maxPackets}`;
+      const { stdout } = await execPromise(command, { 
+        maxBuffer: 10 * 1024 * 1024 // 10MB buffer for limited analysis
+      });
+      
+      const packets: PacketData[] = [];
       stdout.split('\n').forEach(line => {
         if (line.trim()) {
           const parsed = this.parsePacketLine(line);
@@ -247,32 +291,94 @@ class MonitoringService {
         }
       });
 
-      console.log(`Analyzed ${packets.length} packets from capture file`);
+      console.log(`Limited analysis: processed ${packets.length} packets`);
       return packets;
     } catch (error) {
-      console.error('Error analyzing packets:', error);
-      // Instead of throwing, return empty array to handle gracefully
+      console.error('Error in limited packet analysis:', error);
       return [];
     }
   }
 
   private parsePacketLine(line: string): PacketData | null {
-    // Example: 2023-04-22 10:15:23.123456 IP 192.168.1.1.80 > 192.168.1.2.12345: TCP flags [S.], length 0
-    const regex = /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+) IP (\d+\.\d+\.\d+\.\d+)(?:.\d+)? > (\d+\.\d+\.\d+\.\d+)(?:.\d+)?: (\w+) (.*)/;
-    const match = line.match(regex);
+  // The tcpdump output with -tttt -nn should look like:
+  // 2025-06-16 06:05:03.304220 IP 192.168.153.131.42858 > 74.125.200.94.80: Flags [.], ack 1093756488, win 63974, length 0
+  
+  // Try multiple regex patterns to handle different formats
+  const patterns = [
+    // Full timestamp format with IP and ports
+    /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)\s+\w*\s*IP\s+(\d+\.\d+\.\d+\.\d+)(?:\.\d+)?\s+>\s+(\d+\.\d+\.\d+\.\d+)(?:\.\d+)?:\s+(\w+)\s+(.*)/,
     
+    // Simplified format without ports
+    /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)\s+\w*\s*IP\s+(\d+\.\d+\.\d+\.\d+)\s+>\s+(\d+\.\d+\.\d+\.\d+):\s+(\w+)\s+(.*)/,
+    
+    // Even more flexible format
+    /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)\s+.*?(\d+\.\d+\.\d+\.\d+).*?>\s*(\d+\.\d+\.\d+\.\d+).*?(\w+)\s+(.*)/,
+    
+    // Handle ARP and other non-IP protocols
+    /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)\s+\w*\s*(ARP|ICMP|UDP|TCP).*?(\d+\.\d+\.\d+\.\d+).*?(\d+\.\d+\.\d+\.\d+).*?(.*)/
+  ];
+  
+  for (const regex of patterns) {
+    const match = line.match(regex);
     if (match) {
-      return {
-        timestamp: match[1],
-        sourceIp: match[2],
-        destinationIp: match[3],
-        protocol: match[4],
-        length: parseInt(line.match(/length (\d+)/)?.[1] || '0'),
-        info: match[5]
-      };
+      // Extract length from the line
+      const lengthMatch = line.match(/length\s+(\d+)/);
+      const length = lengthMatch ? parseInt(lengthMatch[1]) : 0;
+      
+      // For ARP and other protocols, handle differently
+      if (match[2] === 'ARP' || match[2] === 'ICMP') {
+        // Try to extract IPs from ARP/ICMP lines
+        const ipMatches = line.match(/(\d+\.\d+\.\d+\.\d+)/g);
+        if (ipMatches && ipMatches.length >= 2) {
+          return {
+            timestamp: match[1],
+            sourceIp: ipMatches[0],
+            destinationIp: ipMatches[1],
+            protocol: match[2],
+            length: length,
+            info: match[5] || match[4] || ''
+          };
+        }
+      } else {
+        return {
+          timestamp: match[1],
+          sourceIp: match[2],
+          destinationIp: match[3],
+          protocol: match[4],
+          length: length,
+          info: match[5] || ''
+        };
+      }
     }
-    return null;
   }
+  
+  // If no pattern matches, try to extract basic info
+  const timestampMatch = line.match(/(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)/);
+  const ipMatches = line.match(/(\d+\.\d+\.\d+\.\d+)/g);
+  
+  if (timestampMatch && ipMatches && ipMatches.length >= 2) {
+    // Try to guess protocol
+    let protocol = 'Unknown';
+    if (line.includes('TCP')) protocol = 'TCP';
+    else if (line.includes('UDP')) protocol = 'UDP';
+    else if (line.includes('ICMP')) protocol = 'ICMP';
+    else if (line.includes('ARP')) protocol = 'ARP';
+    
+    const lengthMatch = line.match(/length\s+(\d+)/);
+    const length = lengthMatch ? parseInt(lengthMatch[1]) : 64; // Default size
+    
+    return {
+      timestamp: timestampMatch[1],
+      sourceIp: ipMatches[0],
+      destinationIp: ipMatches[1],
+      protocol: protocol,
+      length: length,
+      info: line.substring(timestampMatch[0].length).trim()
+    };
+  }
+  
+  return null;
+}
 
   private calculateTrafficStats(packets: PacketData[]): TrafficStats {
     const stats: TrafficStats = {
@@ -459,16 +565,30 @@ class MonitoringService {
       // Ensure cleanup of any remaining processes and files
       const tcpdumpProcess = this.tcpdumpProcesses.get(ip);
       if (tcpdumpProcess) {
-        tcpdumpProcess.kill('SIGTERM');
+        tcpdumpProcess.kill();
         this.tcpdumpProcesses.delete(ip);
       }
-      if (captureFile && fs.existsSync(captureFile)) {
+      
+      // COMMENT OUT THE FILE DELETION FOR DEBUGGING
+      // if (captureFile && fs.existsSync(captureFile)) {
+      //   try {
+      //     fs.unlinkSync(captureFile);
+      //   } catch (error) {
+      //     console.error('Error cleaning up capture file:', error);
+      //   }
+      // }
+      
+      // OR add a debug flag to preserve files
+      const PRESERVE_CAPTURE_FILES = true; // Set to false in production
+      if (captureFile && fs.existsSync(captureFile) && !PRESERVE_CAPTURE_FILES) {
         try {
           fs.unlinkSync(captureFile);
         } catch (error) {
           // Just log cleanup errors, don't throw
           console.error('Error cleaning up capture file:', error);
         }
+      } else if (captureFile) {
+        console.log(`Preserving capture file for debugging: ${captureFile}`);
       }
     }
   }
@@ -530,7 +650,15 @@ class MonitoringService {
       const requestMethod = 'MONITOR';
       const requestUrl = `ip://${result.targetIp}`;
       const requestHeaders = {};
-      const requestBody = JSON.stringify(result, null, 2);
+      const requestBody = JSON.stringify({
+        timestamp: result.timestamp,
+        targetIp: result.targetIp,
+        trafficStats: result.trafficStats,
+        anomalies: result.anomalies,
+        suspiciousActivity: result.suspiciousActivity
+      }, null, 2);
+      
+      console.log(`Logging suspicious activity for IP ${result.targetIp}`);
       
       const aiAnalysisResult = await aiService.analyzeMaliciousRequest(
         requestUrl,
@@ -539,23 +667,27 @@ class MonitoringService {
         requestBody,
         result.targetIp
       );
-      
-      const maliciousRequest = new MaliciousRequest({
+        const maliciousRequest = new MaliciousRequest({
         requestUrl,
         requestMethod,
         requestHeaders,
         requestBody,
-        sourceIp: result.targetIp,
-        description: `Automated monitoring detected suspicious activity: ${result.anomalies.join('; ')}`,
+        sourceIp: result.targetIp,  // The IP being monitored
+        description: `Automated monitoring detected suspicious activity on ${result.targetIp}: ${result.anomalies.join('; ')}`,
         severity: aiAnalysisResult.severity,
         type: aiAnalysisResult.type,
         aiAnalysis: aiAnalysisResult.analysis,
-        aiRecommendation: aiAnalysisResult.recommendation,
+        aiRecommendation: Array.isArray(aiAnalysisResult.recommendation)
+          ? aiAnalysisResult.recommendation.join("\n")
+          : String(aiAnalysisResult.recommendation),
         status: ReportStatus.NEW
       });
+        await maliciousRequest.save();
+      console.log(`Successfully logged suspicious activity for IP ${result.targetIp} with ID: ${maliciousRequest._id}`);
       
-      await maliciousRequest.save();
-      console.log(`Logged suspicious activity for IP ${result.targetIp}`);
+      // Debug: Verify the log was saved and can be queried
+      const savedLog = await MaliciousRequest.findById(maliciousRequest._id);
+      console.log(`Verification - Log saved with sourceIp: ${savedLog?.sourceIp}, method: ${savedLog?.requestMethod}`);
     } catch (error) {
       console.error('Error logging suspicious activity:', error);
     }

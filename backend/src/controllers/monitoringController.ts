@@ -101,20 +101,52 @@ export const getMonitoringLogs = async (req: Request, res: Response) => {
     const limit = parseInt(req.query.limit as string) || 10;
     const skip = (page - 1) * limit;
 
-    // Find all logs for the specified IP
-    const logs = await MaliciousRequest.find({ 
-      sourceIp: ip,
-      requestMethod: 'MONITOR'
-    })
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limit);
+    console.log(`Fetching monitoring logs for IP: ${ip}, page: ${page}, limit: ${limit}`);
 
-    // Get total count
-    const total = await MaliciousRequest.countDocuments({ 
-      sourceIp: ip,
-      requestMethod: 'MONITOR'
-    });
+    // Enhanced query to find monitoring logs more effectively
+    const query = { 
+      $or: [
+        // Direct match on sourceIp
+        { sourceIp: ip },
+        // Match monitoring requests specifically
+        { 
+          requestMethod: 'MONITOR',
+          requestUrl: { $regex: ip }
+        },
+        // Search in description for monitoring logs
+        { 
+          description: { $regex: ip },
+          requestMethod: 'MONITOR'
+        },
+        // Search in request body for monitoring data
+        { 
+          requestBody: { $regex: ip },
+          requestMethod: 'MONITOR'
+        }
+      ]
+    };
+
+    console.log('Query:', JSON.stringify(query));
+
+    const logs = await MaliciousRequest.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    console.log(`Found ${logs.length} logs for IP ${ip}`);
+    
+    // Debug: Show what types of logs were found
+    if (logs.length > 0) {
+      const logTypes = logs.map(log => ({
+        method: log.requestMethod,
+        url: log.requestUrl,
+        sourceIp: log.sourceIp,
+        hasDescription: !!log.description
+      }));
+      console.log('Log types found:', JSON.stringify(logTypes, null, 2));
+    }
+
+    const total = await MaliciousRequest.countDocuments(query);
 
     res.json({
       logs,
@@ -125,7 +157,7 @@ export const getMonitoringLogs = async (req: Request, res: Response) => {
       }
     });
   } catch (err) {
-    console.error(err);
+    console.error('Error fetching monitoring logs:', err);
     res.status(500).json({ message: 'Server error' });
   }
 };
