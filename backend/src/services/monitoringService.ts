@@ -89,10 +89,10 @@ class MonitoringService {
     
     return new Promise((resolve, reject) => {
       try {
-        // Use a broader filter to catch more traffic, and try eth0 first, then any
+        // Try 'any' interface first for better compatibility
         const tcpdumpProcess = spawn('tcpdump', [
-          '-i', 'eth0',  // Try eth0 first instead of 'any'
-          'host', ip, 'or', 'src', ip, 'or', 'dst', ip,  // Broader filter
+          '-i', 'any',  // Use 'any' interface directly
+          'host', ip, 'or', 'src', ip, 'or', 'dst', ip,
           '-w', captureFile,
           '-n',  // Don't convert addresses to names
           '-v',  // Verbose mode for better debugging
@@ -104,9 +104,7 @@ class MonitoringService {
         // Handle process events
         tcpdumpProcess.on('error', (error) => {
           console.error(`tcpdump process error for ${ip}:`, error);
-          // Try with 'any' interface if eth0 fails
-          this.startPacketCaptureWithAnyInterface(ip, captureFile).then(resolve).catch(reject);
-          return;
+          reject(error);
         });
 
         // Wait for tcpdump to start capturing
@@ -119,11 +117,6 @@ class MonitoringService {
             resolve(captureFile);
           } else if (output.includes('permission denied') || output.includes('Operation not permitted')) {
             reject(new Error('Permission denied. Please run the setup-tcpdump.sh script with sudo to configure tcpdump permissions.'));
-          } else if (output.includes('No such device exists')) {
-            // If eth0 doesn't exist, try with 'any'
-            tcpdumpProcess.kill();
-            this.startPacketCaptureWithAnyInterface(ip, captureFile).then(resolve).catch(reject);
-            return;
           }
         });
 
