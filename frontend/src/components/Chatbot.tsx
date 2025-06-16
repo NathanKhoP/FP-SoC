@@ -110,55 +110,77 @@ const Chatbot: React.FC<ChatbotProps> = ({ ipContext, attackId, onContextChange 
   };
 
   return (
-    <Paper elevation={3} sx={{ height: '100%', display: 'flex', flexDirection: 'column', borderRadius: 0, overflow: 'hidden' }}>
-      <Box sx={{ 
+    <Paper elevation={3} sx={{ height: '100%', display: 'flex', flexDirection: 'column', borderRadius: 0, overflow: 'hidden' }}>      <Box sx={{ 
         p: 2, 
-        backgroundColor: 'primary.main', 
-        color: 'white',
+        backgroundColor: 'background.paper', 
+        borderBottom: '1px solid',
+        borderColor: 'primary.main',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center'
       }}>
         <Box>
-          <Typography color="#242424" variant="h6">Security Assistant</Typography>
+          <Typography color="primary.main" variant="h6">Security Assistant</Typography>
           {enhancedMode && (
-            <Typography color="#242424" variant="caption" sx={{ opacity: 0.8 }}>
+            <Typography color="text.secondary" variant="caption" sx={{ opacity: 0.8 }}>
               Enhanced with monitoring data & attack analysis
             </Typography>
           )}
         </Box>
         <IconButton 
-          color="inherit" 
+          sx={{ color: 'primary.main' }}
           onClick={clearChat} 
           title="Clear chat history"
           size="small"
         >
-          <DeleteIcon htmlColor='#242424'/>
+          <DeleteIcon />
         </IconButton>
-      </Box>
-
-      {/* Context indicators */}
+      </Box>      {/* Context indicators */}
       {enhancedMode && getContextIndicators().length > 0 && (
-        <Box sx={{ p: 1, backgroundColor: '#f0f0f0', display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-          <Typography color="#242424" variant="caption" sx={{ alignSelf: 'center', mr: 1 }}>
+        <Box sx={{ 
+          p: 1, 
+          backgroundColor: 'rgba(240, 231, 180, 0.1)', 
+          borderBottom: '1px solid rgba(240, 231, 180, 0.2)',
+          display: 'flex', 
+          gap: 1, 
+          flexWrap: 'wrap' 
+        }}>
+          <Typography color="text.primary" variant="caption" sx={{ alignSelf: 'center', mr: 1 }}>
             Active Context:
           </Typography>
           {getContextIndicators()}
         </Box>
-      )}
-
-      {/* Settings */}
-      <Box sx={{ p: 1, borderBottom: '1px solid #e0e0e0', backgroundColor: '#fafafa', color: '#242424', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+      )}      {/* Settings */}
+      <Box sx={{ 
+        p: 1, 
+        borderBottom: '1px solid rgba(240, 231, 180, 0.2)', 
+        backgroundColor: 'rgba(240, 231, 180, 0.05)', 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center' 
+      }}>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap', marginLeft: '1%' }}>
           <FormControlLabel
             control={
               <Switch 
                 checked={enhancedMode}
                 onChange={(e) => setEnhancedMode(e.target.checked)}
                 size="small"
+                sx={{
+                  '& .MuiSwitch-switchBase.Mui-checked': {
+                    color: 'primary.main',
+                  },
+                  '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                    backgroundColor: 'primary.main',
+                  },
+                }}
               />
             }
-            label="Enhanced Mode"
+            label={
+              <Typography variant="body2" color="text.primary">
+                Enhanced Mode
+              </Typography>
+            }
           />
           {enhancedMode && (
             <FormControlLabel
@@ -167,22 +189,33 @@ const Chatbot: React.FC<ChatbotProps> = ({ ipContext, attackId, onContextChange 
                   checked={includeSystemLogs}
                   onChange={(e) => setIncludeSystemLogs(e.target.checked)}
                   size="small"
+                  sx={{
+                    '& .MuiSwitch-switchBase.Mui-checked': {
+                      color: 'primary.main',
+                    },
+                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                      backgroundColor: 'primary.main',
+                    },
+                  }}
                 />
               }
-              label="Include System Logs"
+              label={
+                <Typography variant="body2" color="text.primary">
+                  Include System Logs
+                </Typography>
+              }
             />
           )}
         </Box>
       </Box>
-      
-      <Box sx={{ 
+        <Box sx={{ 
         p: 2, 
         flexGrow: 1, 
         overflowY: 'auto',
         display: 'flex',
         flexDirection: 'column',
         gap: 2,
-        bgcolor: '#f5f5f5',
+        bgcolor: 'background.default',
         maxHeight: '60vh'
       }}>
         {state.messages.length === 0 ? (
@@ -193,34 +226,47 @@ const Chatbot: React.FC<ChatbotProps> = ({ ipContext, attackId, onContextChange 
             height: '100%',
             color: 'text.secondary',
             textAlign: 'center'
-          }}>
-            <Box>
-              <Typography color="#242424" variant="body2" gutterBottom>
+          }}>            <Box>
+              <Typography color="text.primary" variant="body2" gutterBottom>
                 {enhancedMode 
                   ? "Ask about attacks, monitoring data, security incidents, or get detailed threat analysis."
                   : "Ask the security assistant about cybersecurity best practices and general security questions."
                 }
               </Typography>
               {enhancedMode && (ipContext || attackId) && (
-                <Typography variant="caption" color="#242424">
+                <Typography variant="caption" color="text.secondary">
                   ✓ Context-aware analysis enabled
                 </Typography>
               )}
             </Box>
           </Box>
         ) : (
-          state.messages.map((msg) => (
-            <Paper 
+          state.messages.map((msg) => (              <Paper 
               key={msg.id} 
               elevation={1}
               sx={{ 
-                p: 2, 
-                maxWidth: '85%', 
+                p: 1,
+                width: 'auto',
+                maxWidth: '30%', 
                 alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                bgcolor: msg.role === 'user' ? 'primary.light' : 'white',
-                color: msg.role === 'user' ? 'white' : 'text.primary',
-                borderRadius: 2,
-                wordBreak: 'break-word'
+                bgcolor: msg.role === 'user' ? 'primary.main' : 'background.paper',
+                color: msg.role === 'user' ? 'background.default' : 'text.primary',
+                borderRadius: 1.5,
+                wordBreak: 'break-word',
+                border: '1px solid',
+                borderColor: msg.role === 'user' ? 'primary.main' : 'rgba(240, 231, 180, 0.3)',
+                fontSize: '0.9rem',
+                lineHeight: 1.3,
+                '& p': {
+                  margin: '0.2rem 0',
+                  lineHeight: 1.3
+                },
+                '& p:first-of-type': {
+                  marginTop: 0
+                },
+                '& p:last-of-type': {
+                  marginBottom: 0
+                }
               }}
             >
               <ReactMarkdown
@@ -249,7 +295,7 @@ const Chatbot: React.FC<ChatbotProps> = ({ ipContext, attackId, onContextChange 
         )}
         
         {state.isLoading && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, alignSelf: 'flex-start' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, alignSelf: 'flex-start'}}>
             <CircularProgress size={16} />
             <Typography variant="body2" color="text.secondary">
               {enhancedMode ? "Analyzing security data..." : "Thinking..."}
@@ -259,8 +305,11 @@ const Chatbot: React.FC<ChatbotProps> = ({ ipContext, attackId, onContextChange 
         
         <div ref={messagesEndRef} />
       </Box>
-      
-      <Box component="form" onSubmit={handleSubmit} sx={{ p: 2, backgroundColor: 'white' }}>
+        <Box component="form" onSubmit={handleSubmit} sx={{ 
+        p: 2, 
+        backgroundColor: 'background.paper',
+        borderTop: '1px solid rgba(240, 231, 180, 0.2)'
+      }}>
         <Box sx={{ display: 'flex', gap: 1 }}>
           <TextField
             fullWidth
@@ -274,12 +323,41 @@ const Chatbot: React.FC<ChatbotProps> = ({ ipContext, attackId, onContextChange 
             size="small"
             multiline
             maxRows={3}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                '& fieldset': {
+                  borderColor: 'rgba(240, 231, 180, 0.3)',
+                },
+                '&:hover fieldset': {
+                  borderColor: 'primary.main',
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: 'primary.main',
+                },
+              },
+              '& .MuiInputBase-input': {
+                color: 'text.primary',
+              },
+              '& .MuiInputBase-input::placeholder': {
+                color: 'text.secondary',
+                opacity: 0.7,
+              },
+            }}
           />
           <Button
             type="submit"
             variant="contained"
             disabled={!input.trim() || state.isLoading}
-            sx={{ minWidth: 'auto', px: 2 }}
+            sx={{ 
+              minWidth: 'auto', 
+              px: 2,
+              backgroundColor: 'primary.main',
+              color: 'background.default',
+              '&:hover': {
+                backgroundColor: 'primary.main',
+                filter: 'brightness(0.9)',
+              },
+            }}
           >
             <SendIcon />
           </Button>

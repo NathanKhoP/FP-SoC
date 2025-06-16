@@ -1,4 +1,4 @@
-# Automated Malicious Request Reporting System with AI Chatbot Integration
+# Automated Request Monitoring and Offense Reporting (ARMOR)
 
 An advanced security system that automates the reporting, analysis, and response to malicious web requests with integrated AI chatbot capabilities powered by Groq.
 
