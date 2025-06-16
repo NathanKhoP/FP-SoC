@@ -300,22 +300,85 @@ class MonitoringService {
   }
 
   private parsePacketLine(line: string): PacketData | null {
-    // Example: 2023-04-22 10:15:23.123456 IP 192.168.1.1.80 > 192.168.1.2.12345: TCP flags [S.], length 0
-    const regex = /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+) IP (\d+\.\d+\.\d+\.\d+)(?:.\d+)? > (\d+\.\d+\.\d+\.\d+)(?:.\d+)?: (\w+) (.*)/;
-    const match = line.match(regex);
+  // The tcpdump output with -tttt -nn should look like:
+  // 2025-06-16 06:05:03.304220 IP 192.168.153.131.42858 > 74.125.200.94.80: Flags [.], ack 1093756488, win 63974, length 0
+  
+  // Try multiple regex patterns to handle different formats
+  const patterns = [
+    // Full timestamp format with IP and ports
+    /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)\s+\w*\s*IP\s+(\d+\.\d+\.\d+\.\d+)(?:\.\d+)?\s+>\s+(\d+\.\d+\.\d+\.\d+)(?:\.\d+)?:\s+(\w+)\s+(.*)/,
     
+    // Simplified format without ports
+    /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)\s+\w*\s*IP\s+(\d+\.\d+\.\d+\.\d+)\s+>\s+(\d+\.\d+\.\d+\.\d+):\s+(\w+)\s+(.*)/,
+    
+    // Even more flexible format
+    /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)\s+.*?(\d+\.\d+\.\d+\.\d+).*?>\s*(\d+\.\d+\.\d+\.\d+).*?(\w+)\s+(.*)/,
+    
+    // Handle ARP and other non-IP protocols
+    /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)\s+\w*\s*(ARP|ICMP|UDP|TCP).*?(\d+\.\d+\.\d+\.\d+).*?(\d+\.\d+\.\d+\.\d+).*?(.*)/
+  ];
+  
+  for (const regex of patterns) {
+    const match = line.match(regex);
     if (match) {
-      return {
-        timestamp: match[1],
-        sourceIp: match[2],
-        destinationIp: match[3],
-        protocol: match[4],
-        length: parseInt(line.match(/length (\d+)/)?.[1] || '0'),
-        info: match[5]
-      };
+      // Extract length from the line
+      const lengthMatch = line.match(/length\s+(\d+)/);
+      const length = lengthMatch ? parseInt(lengthMatch[1]) : 0;
+      
+      // For ARP and other protocols, handle differently
+      if (match[2] === 'ARP' || match[2] === 'ICMP') {
+        // Try to extract IPs from ARP/ICMP lines
+        const ipMatches = line.match(/(\d+\.\d+\.\d+\.\d+)/g);
+        if (ipMatches && ipMatches.length >= 2) {
+          return {
+            timestamp: match[1],
+            sourceIp: ipMatches[0],
+            destinationIp: ipMatches[1],
+            protocol: match[2],
+            length: length,
+            info: match[5] || match[4] || ''
+          };
+        }
+      } else {
+        return {
+          timestamp: match[1],
+          sourceIp: match[2],
+          destinationIp: match[3],
+          protocol: match[4],
+          length: length,
+          info: match[5] || ''
+        };
+      }
     }
-    return null;
   }
+  
+  // If no pattern matches, try to extract basic info
+  const timestampMatch = line.match(/(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)/);
+  const ipMatches = line.match(/(\d+\.\d+\.\d+\.\d+)/g);
+  
+  if (timestampMatch && ipMatches && ipMatches.length >= 2) {
+    // Try to guess protocol
+    let protocol = 'Unknown';
+    if (line.includes('TCP')) protocol = 'TCP';
+    else if (line.includes('UDP')) protocol = 'UDP';
+    else if (line.includes('ICMP')) protocol = 'ICMP';
+    else if (line.includes('ARP')) protocol = 'ARP';
+    
+    const lengthMatch = line.match(/length\s+(\d+)/);
+    const length = lengthMatch ? parseInt(lengthMatch[1]) : 64; // Default size
+    
+    return {
+      timestamp: timestampMatch[1],
+      sourceIp: ipMatches[0],
+      destinationIp: ipMatches[1],
+      protocol: protocol,
+      length: length,
+      info: line.substring(timestampMatch[0].length).trim()
+    };
+  }
+  
+  return null;
+}
 
   private calculateTrafficStats(packets: PacketData[]): TrafficStats {
     const stats: TrafficStats = {
@@ -502,16 +565,30 @@ class MonitoringService {
       // Ensure cleanup of any remaining processes and files
       const tcpdumpProcess = this.tcpdumpProcesses.get(ip);
       if (tcpdumpProcess) {
-        tcpdumpProcess.kill('SIGTERM');
+        tcpdumpProcess.kill();
         this.tcpdumpProcesses.delete(ip);
       }
-      if (captureFile && fs.existsSync(captureFile)) {
+      
+      // COMMENT OUT THE FILE DELETION FOR DEBUGGING
+      // if (captureFile && fs.existsSync(captureFile)) {
+      //   try {
+      //     fs.unlinkSync(captureFile);
+      //   } catch (error) {
+      //     console.error('Error cleaning up capture file:', error);
+      //   }
+      // }
+      
+      // OR add a debug flag to preserve files
+      const PRESERVE_CAPTURE_FILES = true; // Set to false in production
+      if (captureFile && fs.existsSync(captureFile) && !PRESERVE_CAPTURE_FILES) {
         try {
           fs.unlinkSync(captureFile);
         } catch (error) {
           // Just log cleanup errors, don't throw
           console.error('Error cleaning up capture file:', error);
         }
+      } else if (captureFile) {
+        console.log(`Preserving capture file for debugging: ${captureFile}`);
       }
     }
   }
