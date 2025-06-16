@@ -174,12 +174,22 @@ const IpMonitor: React.FC = () => {
     setSelectedIp(ip);
     try {
       setLogsLoading(true);
+      setError(null);
+      console.log(`Loading logs for IP: ${ip}`);
       const response = await getMonitoringLogs(ip);
+      console.log('Logs response:', response);
+      console.log('Number of logs received:', response.logs?.length || 0);
+      if (response.logs?.length > 0) {
+        console.log('First log sample:', response.logs[0]);
+      }
       setMonitoringLogs(response.logs);
+      setSuccess(`Loaded ${response.logs?.length || 0} logs for ${ip}`);
       setLogsLoading(false);
     } catch (err) {
+      console.error('Error loading logs:', err);
       setError(`Failed to load logs for ${ip}`);
       setLogsLoading(false);
+      setSuccess(null);
     }
   };
 

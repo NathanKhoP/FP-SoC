@@ -650,7 +650,15 @@ class MonitoringService {
       const requestMethod = 'MONITOR';
       const requestUrl = `ip://${result.targetIp}`;
       const requestHeaders = {};
-      const requestBody = JSON.stringify(result, null, 2);
+      const requestBody = JSON.stringify({
+        timestamp: result.timestamp,
+        targetIp: result.targetIp,
+        trafficStats: result.trafficStats,
+        anomalies: result.anomalies,
+        suspiciousActivity: result.suspiciousActivity
+      }, null, 2);
+      
+      console.log(`Logging suspicious activity for IP ${result.targetIp}`);
       
       const aiAnalysisResult = await aiService.analyzeMaliciousRequest(
         requestUrl,
@@ -659,23 +667,27 @@ class MonitoringService {
         requestBody,
         result.targetIp
       );
-      
-      const maliciousRequest = new MaliciousRequest({
+        const maliciousRequest = new MaliciousRequest({
         requestUrl,
         requestMethod,
         requestHeaders,
         requestBody,
-        sourceIp: result.targetIp,
-        description: `Automated monitoring detected suspicious activity: ${result.anomalies.join('; ')}`,
+        sourceIp: result.targetIp,  // The IP being monitored
+        description: `Automated monitoring detected suspicious activity on ${result.targetIp}: ${result.anomalies.join('; ')}`,
         severity: aiAnalysisResult.severity,
         type: aiAnalysisResult.type,
         aiAnalysis: aiAnalysisResult.analysis,
-        aiRecommendation: aiAnalysisResult.recommendation,
+        aiRecommendation: Array.isArray(aiAnalysisResult.recommendation)
+          ? aiAnalysisResult.recommendation.join("\n")
+          : String(aiAnalysisResult.recommendation),
         status: ReportStatus.NEW
       });
+        await maliciousRequest.save();
+      console.log(`Successfully logged suspicious activity for IP ${result.targetIp} with ID: ${maliciousRequest._id}`);
       
-      await maliciousRequest.save();
-      console.log(`Logged suspicious activity for IP ${result.targetIp}`);
+      // Debug: Verify the log was saved and can be queried
+      const savedLog = await MaliciousRequest.findById(maliciousRequest._id);
+      console.log(`Verification - Log saved with sourceIp: ${savedLog?.sourceIp}, method: ${savedLog?.requestMethod}`);
     } catch (error) {
       console.error('Error logging suspicious activity:', error);
     }
