@@ -229,10 +229,61 @@ class MonitoringService {
 
       console.log(`Analyzing capture file: ${captureFile} (${stats.size} bytes)`);
       
-      const command = `tcpdump -r '${captureFile.replace(/'/g, "'\\''")}' -nn -tttt`;
-      const { stdout } = await execPromise(command);
-      const packets: PacketData[] = [];
+      // If file is too large, limit the number of packets to analyze
+      const maxPackets = 10000; // Limit to prevent memory issues
+      const command = `tcpdump -r '${captureFile.replace(/'/g, "'\\''")}' -nn -tttt -c ${maxPackets}`;
       
+      // Increase maxBuffer size to handle large outputs
+      const { stdout } = await execPromise(command, { 
+        maxBuffer: 50 * 1024 * 1024 // 50MB buffer
+      });
+      
+      const packets: PacketData[] = [];
+      const lines = stdout.split('\n');
+      
+      console.log(`Processing ${lines.length} lines from tcpdump output`);
+      
+      let processedCount = 0;
+      for (const line of lines) {
+        if (line.trim()) {
+          const parsed = this.parsePacketLine(line);
+          if (parsed) {
+            packets.push(parsed);
+            processedCount++;
+            
+            // Progress logging for large captures
+            if (processedCount % 1000 === 0) {
+              console.log(`Processed ${processedCount} packets...`);
+            }
+          }
+        }
+      }
+
+      console.log(`Analyzed ${packets.length} packets from capture file (${processedCount} total processed)`);
+      return packets;
+    } catch (error) {
+      console.error('Error analyzing packets:', error);
+      
+      // If it's a buffer overflow error, try with fewer packets
+      if (error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+        console.log('Buffer overflow detected, trying with limited packet count...');
+        return this.analyzePacketsLimited(captureFile, 1000);
+      }
+      
+      return [];
+    }
+  }
+
+  private async analyzePacketsLimited(captureFile: string, maxPackets: number): Promise<PacketData[]> {
+    try {
+      console.log(`Analyzing first ${maxPackets} packets from large capture file`);
+      
+      const command = `tcpdump -r '${captureFile.replace(/'/g, "'\\''")}' -nn -tttt -c ${maxPackets}`;
+      const { stdout } = await execPromise(command, { 
+        maxBuffer: 10 * 1024 * 1024 // 10MB buffer for limited analysis
+      });
+      
+      const packets: PacketData[] = [];
       stdout.split('\n').forEach(line => {
         if (line.trim()) {
           const parsed = this.parsePacketLine(line);
@@ -240,11 +291,10 @@ class MonitoringService {
         }
       });
 
-      console.log(`Analyzed ${packets.length} packets from capture file`);
+      console.log(`Limited analysis: processed ${packets.length} packets`);
       return packets;
     } catch (error) {
-      console.error('Error analyzing packets:', error);
-      // Instead of throwing, return empty array to handle gracefully
+      console.error('Error in limited packet analysis:', error);
       return [];
     }
   }
