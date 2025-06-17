@@ -512,7 +512,7 @@ const IpMonitor: React.FC = () => {
                       </Grid>
                       <Grid item xs={12}>
                         <Typography variant="subtitle2">Details</Typography>
-                        <Paper variant="outlined" sx={{ p: 1, mt: 1, bgcolor: '#f5f5f5' }}>
+                        <Paper variant="outlined" sx={{ p: 1, mt: 1, bgcolor: 'background.default' }}>
                           <pre style={{ margin: 0, overflow: 'auto' }}>
                             {log.requestBody}
                           </pre>
