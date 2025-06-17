@@ -1,3 +1,15 @@
+# Kelompok 4 - SOC (Security Operation Center)
+## Anggota Kelompok: 
+| NO | Nama | NRP | 
+|---|---|---|
+| 1 | Nathan Kho Pancras | 5027231002 | 
+| 2 | Rafael Jonathan Arnoldus | 5027231006 | 
+| 3 | Michael Kenneth Salim | 5027231008 | 
+| 4 | Rafael Ega Krisaditya | 5027231025 | 
+| 5 | Amoes Noland | 5027231028 | 
+| 6 | Fico Simhanandi | 5027231030 |
+
+
 # Automated Request Monitoring and Offense Reporting (ARMOR)
 
 An advanced security system that automates the reporting, analysis, and response to malicious web requests with integrated AI chatbot capabilities powered by Groq.
